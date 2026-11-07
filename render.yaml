@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: venatus-casino
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: /app/data
+      - key: OWNER_SETUP_TOKEN
+        generateValue: true

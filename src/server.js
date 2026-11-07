@@ -18,7 +18,7 @@ const integer = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max
 const text = (value, min = 1, max = 80) => typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
 
 export function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), setupToken = process.env.OWNER_SETUP_TOKEN,
-  secureCookies = process.env.NODE_ENV === 'production', origin = process.env.ORIGIN, tickMs = 250, apiLimit = 600 } = {}) {
+  secureCookies = process.env.NODE_ENV === 'production', origin = process.env.ORIGIN || process.env.RENDER_EXTERNAL_URL, tickMs = 250, apiLimit = 600 } = {}) {
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
@@ -395,7 +395,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(32).toString('hex'), { mode: 0o600 });
     setupToken = readFileSync(tokenFile, 'utf8').trim();
   }
-  if (process.env.NODE_ENV === 'production' && !/^https:\/\//.test(process.env.ORIGIN || '')) throw new Error('Set ORIGIN to the public HTTPS origin');
+  if (process.env.NODE_ENV === 'production' && !/^https:\/\//.test(process.env.ORIGIN || process.env.RENDER_EXTERNAL_URL || '')) throw new Error('Set ORIGIN to the public HTTPS origin');
   const app = createApp({ dbPath: resolve(dataDir, 'casino.sqlite'), setupToken });
   const port = Number(process.env.PORT || 3000);
   app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
