@@ -16,7 +16,7 @@ export function chromaticDeck() {
 }
 const next = (g, id = g.turn, distance = 1) => g.players[(g.players.indexOf(id) + distance * g.direction + g.players.length * 4) % g.players.length];
 const start = (g, id, now, phase = 'play', ms = 30000) => { g.turn = id; g.phase = phase; g.deadline = now + ms; g.drawnCardId = null; };
-const matches = (g, c) => c.color === 'wild' || c.color === g.activeColor || c.value === g.discard.at(-1).value;
+const matches = (g, c) => g.pendingPenalty ? (c.value === 'wilddraw4' || (g.penaltyKind === 'draw2' && c.value === 'draw2')) : c.color === 'wild' || c.color === g.activeColor || c.value === g.discard.at(-1).value;
 function draw(g, id, count) {
   const result = [];
   for (let n = 0; n < count; n++) {
@@ -35,7 +35,7 @@ function endRound(g, id, now) {
   else { start(g, id, now, 'round-end', 15000); g.message = `Round complete: ${g.roundPoints} points awarded. Next round in 15 seconds.`; }
 }
 function deal(g, now) {
-  g.round++; g.direction = 1; g.catchablePlayer = null; g.pendingDraw4 = null; g.evidence = null; g.announced = null;
+  g.round++; g.direction = 1; g.catchablePlayer = null; g.pendingDraw4 = null; g.evidence = null; g.announced = null; g.pendingPenalty = 0; g.penaltyKind = null;
   g.drawPile = shuffle(chromaticDeck()); g.discard = []; g.hands = Object.fromEntries(g.players.map(p => [p, []]));
   for (let n=0;n<7;n++) for (const p of g.players) draw(g,p,1);
   let top;
@@ -47,10 +47,10 @@ function deal(g, now) {
   if (top.value === 'skip') g.turn = next(g, first);
   if (top.value === 'draw2') { draw(g, first, 2); g.turn = next(g, first); }
 }
-export function createChromatic(players, now = Date.now()) {
+export function createChromatic(players, now = Date.now(), options = {}) {
   assert(Array.isArray(players) && players.length >= 2 && players.length <= 6 && new Set(players).size === players.length && players.every(p => typeof p === 'string' && p && !['__proto__','constructor','prototype'].includes(p)), 'Chromatic needs 2–6 distinct players');
   const g = { type: 'chromatic', rulesVersion: 2, players: [...players], dealer: players[randomInt(players.length)], round: 0,
-    scores: Object.fromEntries(players.map(p => [p,0])), targetScore: 500, winner: null, moves: 0 };
+    scores: Object.fromEntries(players.map(p => [p,0])), targetScore: 500, winner: null, moves: 0, houseRules: options.houseRules === 'street' ? 'street' : 'classic' };
   deal(g,now); return g;
 }
 function resolveDraw4(g, challenged, now) {
@@ -92,6 +92,10 @@ function action(g,id,a,now) {
   }
   if (a.type === 'draw') {
     assert(g.phase === 'play', 'You have already drawn'); g.catchablePlayer = null; g.announced = null; g.evidence = null;
+    if (g.pendingPenalty) {
+      const amount=g.pendingPenalty; draw(g,id,amount); g.pendingPenalty=0; g.penaltyKind=null;
+      start(g,next(g),now); g.message=`${amount} penalty cards collected. Turn skipped.`; return;
+    }
     const drawn = draw(g,id,1)[0];
     if (drawn && matches(g,drawn)) { start(g,id,now,'drawn'); g.drawnCardId = drawn.id; g.message = 'Play the drawn card, or keep it and pass.'; }
     else { start(g,next(g),now); g.message = drawn ? 'Card drawn. The next player takes their turn.' : 'No cards available to draw. Turn passed.'; }
@@ -108,6 +112,12 @@ function action(g,id,a,now) {
   g.activeColor = c.color === 'wild' ? a.color : c.color;
   if (g.hands[id].length === 1 && !a.declare && g.announced !== id) g.catchablePlayer = id;
   g.announced = null;
+  if (g.houseRules === 'street' && ['draw2','wilddraw4'].includes(c.value)) {
+    g.pendingPenalty=(g.pendingPenalty||0)+(c.value==='draw2'?2:4); g.penaltyKind=c.value;
+    if (!g.hands[id].length) { draw(g,next(g,id),g.pendingPenalty); g.pendingPenalty=0; g.penaltyKind=null; endRound(g,id,now); }
+    else { start(g,next(g,id),now); g.message=`Stack is +${g.pendingPenalty}. Stack a ${c.value==='draw2'?'+2 or +4':'+4'}, or draw the total and skip your turn.`; }
+    return;
+  }
   if (c.value === 'wilddraw4') {
     const target = next(g,id); g.pendingDraw4 = { player:id,target,illegal,hand:structuredClone(g.hands[id]) };
     start(g,target,now,'challenge',8000); g.message = 'Wild +4: accept four cards or challenge its legality.'; return;
@@ -136,6 +146,7 @@ export function tickChromatic(original,now=Date.now()) {
 export function viewChromatic(g,id) {
   const hand = structuredClone(g.hands[id] || []);
   return { type:g.type,rulesVersion:2,players:[...g.players],turn:g.turn,phase:g.phase,winner:g.winner,deadline:g.deadline,message:g.message,moves:g.moves,
+    houseRules:g.houseRules||'classic',pendingPenalty:g.pendingPenalty||0,penaltyKind:g.penaltyKind,
     hand,counts:Object.fromEntries(g.players.map(p=>[p,g.hands[p].length])),topCard:structuredClone(g.discard.at(-1)),activeColor:g.activeColor,direction:g.direction,
     colors:[...COLORS],drawCount:g.drawPile.length,discardCount:g.discard.length,scores:{...g.scores},targetScore:g.targetScore,round:g.round,roundWinner:g.roundWinner,roundPoints:g.roundPoints,
     legalCardIds:g.turn===id && ['play','drawn'].includes(g.phase) ? hand.filter(c=>matches(g,c) && (g.phase!=='drawn' || c.id===g.drawnCardId)).map(c=>c.id) : [],

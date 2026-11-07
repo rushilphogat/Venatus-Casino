@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createGame,actGame,tickGame,viewGame} from '../src/games.js';
+import {createChromatic,actChromatic,viewChromatic} from '../src/chromatic.js';
+test('street Bluff holds rank, supports skips, clears only after everybody skips',()=>{
+  let g=createGame('bluff',['a','b','c'],100,{houseRules:'street'});
+  g=actGame(g,'a',{type:'play',rank:'K',cards:[g.hands.a[0].id]},101);
+  assert.equal(viewGame(g,'b').lastPlay.count,1);
+  g=tickGame(g,g.deadline);
+  assert.equal(viewGame(g,'b').requiredRank,'K');
+  assert.throws(()=>actGame(g,'b',{type:'play',rank:'A',cards:[g.hands.b[0].id]},g.deadline-1),/Keep the declared rank/);
+  for(const id of ['b','c'])g=actGame(g,id,{type:'skip'},g.deadline-1);
+  assert.equal(g.declaredRank,'K');assert.equal(g.pile.length,1);
+  g=actGame(g,'a',{type:'skip'},g.deadline-1);
+  assert.equal(g.declaredRank,null);assert.equal(g.pile.length,0);
+});
+test('street Chromatic stacks +2 then +4, rejects +2 on +4 and draws the total',()=>{
+  let g=createChromatic(['a','b','c'],100,{houseRules:'street'});
+  const card=(id,value,color='ruby')=>({id,value,color});
+  g.direction=1;g.turn='a';g.phase='play';g.activeColor='ruby';g.pendingPenalty=0;g.deadline=10000;
+  g.hands.a=[card('a2','draw2'),card('a1','1')];
+  g.hands.b=[card('b4','wilddraw4','wild'),card('b1','1')];
+  g.hands.c=[card('c2','draw2'),card('c1','1')];
+  g=actChromatic(g,'a',{type:'play',cards:['a2']},101);
+  g=actChromatic(g,'b',{type:'play',cards:['b4'],color:'ruby'},102);
+  assert.equal(g.pendingPenalty,6);assert.deepEqual(viewChromatic(g,'c').legalCardIds,[]);
+  assert.throws(()=>actChromatic(g,'c',{type:'play',cards:['c2']},103),/matching card/);
+  g=actChromatic(g,'c',{type:'draw'},104);
+  assert.equal(g.hands.c.length,8);assert.equal(g.pendingPenalty,0);assert.equal(g.turn,'a');
+});

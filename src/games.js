@@ -43,7 +43,7 @@ export function createGame(type, playerIds, now = Date.now(), options = {}) {
   if (type === 'ohhell') return createOhHell(playerIds, now);
   if (type === 'rummy') return createRummy(playerIds, now);
   if (type === 'poker') return createPoker(playerIds, now, options);
-  if (type === 'chromatic') return createChromatic(playerIds, now);
+  if (type === 'chromatic') return createChromatic(playerIds, now, options);
   requireCondition(['bluff', 'chromatic'].includes(type), 'Unknown game');
   requireCondition(Array.isArray(playerIds) && playerIds.every(id => typeof id === 'string' && id.length && !['__proto__', 'constructor', 'prototype'].includes(id)), 'Invalid player identifiers');
   requireCondition(new Set(playerIds).size === playerIds.length, 'Players must be unique');
@@ -53,7 +53,8 @@ export function createGame(type, playerIds, now = Date.now(), options = {}) {
   if (type === 'bluff') {
     const deck = shuffle(['clubs', 'diamonds', 'hearts', 'spades'].flatMap(suit => RANKS.map(rank => ({ id: `${suit}-${rank}`, rank, suit }))));
     deck.forEach((card, i) => game.hands[playerIds[i % playerIds.length]].push(card));
-    Object.assign(game, { rankIndex: 0, pile: [], lastPlay: null, reveal: null });
+    Object.assign(game, { rankIndex: 0, pile: [], lastPlay: null, reveal: null,
+      houseRules: options.houseRules === 'street' ? 'street' : 'classic', declaredRank: null, skips: 0, clearedCount: 0 });
   } else {
     let serial = 0;
     const deck = [];
@@ -87,12 +88,21 @@ function removeCards(game, userId, cards) {
 
 function advanceBluff(game, now) {
   const player = game.lastPlay.player;
-  game.rankIndex = (game.rankIndex + 1) % RANKS.length;
+  if (game.houseRules !== 'street') game.rankIndex = (game.rankIndex + 1) % RANKS.length;
   game.lastPlay = null;
   startTurn(game, nextPlayer(game, player), now);
 }
 
 function bluffAction(game, userId, action, now) {
+  if (action.type === 'skip' && game.houseRules === 'street') {
+    requireCondition(game.phase === 'play' && game.turn === userId, 'It is not your turn');
+    game.skips++;
+    if (game.skips >= game.players.length) {
+      game.clearedCount += game.pile.length; game.pile=[]; game.declaredRank=null; game.skips=0;
+      game.message='Everyone skipped. The pile is cleared; choose a new rank.';
+    } else game.message=`Turn skipped. ${game.declaredRank || 'Any rank'} remains in play.`;
+    game.reveal=null; startTurn(game,nextPlayer(game,userId),now); return;
+  }
   if (action.type === 'challenge') {
     requireCondition(game.phase === 'challenge' && game.lastPlay, 'There is no declaration to challenge');
     const play = game.lastPlay;
@@ -102,6 +112,7 @@ function bluffAction(game, userId, action, now) {
     game.reveal = { cards: play.cards, player: play.player, challenger: userId, lied, collector };
     game.hands[collector].push(...game.pile);
     game.pile = [];
+    if (game.houseRules === 'street') { game.declaredRank=null; game.skips=0; }
     game.message = lied ? 'Bluff exposed. The player takes the pile.' : 'An honest declaration. The challenger takes the pile.';
     if (!game.hands[play.player].length) finish(game, play.player);
     else advanceBluff(game, now);
@@ -110,13 +121,17 @@ function bluffAction(game, userId, action, now) {
   requireCondition(action.type === 'play', 'Unknown action');
   requireCondition(game.phase === 'play' && game.turn === userId, 'It is not your turn');
   const cards = selectedCards(game, userId, action.cards, 4);
+  if (game.houseRules === 'street') {
+    requireCondition(game.declaredRank ? !action.rank || action.rank === game.declaredRank : RANKS.includes(action.rank), game.declaredRank ? 'Keep the declared rank until the pile resets' : 'Choose the rank you are declaring');
+    game.declaredRank ||= action.rank; game.skips=0;
+  }
   removeCards(game, userId, cards);
   game.pile.push(...cards);
-  game.lastPlay = { player: userId, cards, rank: RANKS[game.rankIndex] };
+  game.lastPlay = { player: userId, cards, rank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex] };
   game.reveal = null;
   game.phase = 'challenge';
   game.deadline = now + CHALLENGE_MS;
-  game.message = `${cards.length} card${cards.length === 1 ? '' : 's'} declared as ${RANKS[game.rankIndex]}. Challenge now or let the declaration stand.`;
+  game.message = `${cards.length} card${cards.length === 1 ? '' : 's'} declared as ${game.lastPlay.rank}. Challenge now or let the declaration stand.`;
 }
 
 function drawCards(game, player, count) {
@@ -187,10 +202,11 @@ export function tickGame(original, now = Date.now()) {
   const game = structuredClone(original);
   if (game.type === 'bluff' && game.phase === 'challenge') {
     const player = game.lastPlay.player;
-    game.message = 'The declaration stands. The next rank is in play.';
+    game.message = game.houseRules === 'street' ? `The declaration stands. ${game.declaredRank} stays in play.` : 'The declaration stands. The next rank is in play.';
     if (!game.hands[player].length) finish(game, player);
     else advanceBluff(game, now);
   } else if (game.type === 'bluff') {
+    if (game.houseRules === 'street') { bluffAction(game,game.turn,{type:'skip'},now); game.moves++; return game; }
     bluffAction(game, game.turn, { type: 'play', cards: [game.hands[game.turn][0].id] }, now);
     game.message = `Time expired. One card was declared as ${RANKS[game.rankIndex]}. The challenge window is open.`;
   } else {
@@ -209,7 +225,7 @@ export function viewGame(game, userId) {
   const view = { type: game.type, players: [...game.players], turn: game.turn, phase: game.phase, winner: game.winner,
     deadline: game.deadline, message: game.message, moves: game.moves,
     hand: structuredClone(game.hands[userId] ?? []), counts: Object.fromEntries(game.players.map(id => [id, game.hands[id].length])) };
-  if (game.type === 'bluff') Object.assign(view, { requiredRank: RANKS[game.rankIndex], pileCount: game.pile.length,
+  if (game.type === 'bluff') Object.assign(view, { houseRules:game.houseRules, ranks:[...RANKS], skips:game.skips, requiredRank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex], pileCount: game.pile.length,
     lastPlay: game.lastPlay ? { player: game.lastPlay.player, rank: game.lastPlay.rank, count: game.lastPlay.cards.length } : null,
     reveal: structuredClone(game.reveal) });
   else Object.assign(view, { topCard: structuredClone(game.discard.at(-1)), activeColor: game.activeColor, direction: game.direction,

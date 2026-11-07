@@ -1537,3 +1537,26 @@ to {
 
 }
 
+
+/* Table feedback: restrained movement, strong turn and penalty hierarchy. */
+.felt { background: radial-gradient(ellipse at 50% 35%,#245747 0%,#143a30 48%,#0a241d 100%); box-shadow: inset 0 0 0 2px #cdb77a33,inset 0 0 70px #0006,0 20px 60px #0004; }
+.seat { transition: border-color .25s,background .25s,box-shadow .25s; }
+.seat.active { border-color:#e4c77c; background:#d6b76c19; box-shadow:0 0 25px #dbbd6b30; }
+.seat.active .avatar { box-shadow:0 0 0 4px #d6b76c33; }
+.game-card { transition:transform .2s,box-shadow .2s; }
+.game-card:hover { transform:translateY(-4px); box-shadow:0 18px 42px #0005; }
+.hand .playing-card { transition:transform .18s,box-shadow .18s,filter .18s; }
+.hand .playing-card:not(:disabled):hover { transform:translateY(-12px) rotate(-2deg); box-shadow:0 15px 24px #0007; }
+.hand .playing-card.selected { transform:translateY(-18px); box-shadow:0 0 0 3px #e4c77c,0 16px 30px #0008; }
+.turn-bar { border-left:3px solid #d6b76c; background:linear-gradient(90deg,#d6b76c16,transparent); padding:16px 20px; border-radius:12px; }
+.timer { font-variant-numeric:tabular-nums; background:#d6b76c20; border-radius:99px; padding:6px 12px; }
+.penalty-banner { display:flex;gap:18px;align-items:center;justify-content:center;margin:18px 0;padding:18px;border:1px solid #ee876c88;border-radius:18px;background:linear-gradient(120deg,#642d36,#31263c);animation:stack-arrive .3s ease-out; }
+.penalty-banner strong { font-size:48px;line-height:1;color:#ffc4a3; }
+.penalty-banner span { font-size:12px;letter-spacing:.12em; }
+.penalty-banner small { display:block;margin-top:8px;letter-spacing:normal;font-size:14px; }
+.score-strip { padding:12px;border-radius:12px;background:#ffffff06; }
+.reveal .playing-card { animation:reveal-flip .4s ease-out; }
+.win-banner { animation:stack-arrive .4s ease-out;box-shadow:0 0 36px #d6b76c22; }
+@keyframes stack-arrive { from { opacity:0;transform:translateY(8px) scale(.97); } to {opacity:1;transform:none;} }
+@keyframes reveal-flip { from {opacity:0;transform:rotateY(80deg);} to {opacity:1;transform:rotateY(0);} }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after {animation:none!important;transition:none!important;scroll-behavior:auto!important;} }

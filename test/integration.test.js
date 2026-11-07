@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import WebSocket from 'ws';
 import { createApp } from '../src/server.js';
+import { postgresStorage } from './postgres-fixture.js';
 
 const password = 'Venatus-test-password-42';
 
@@ -20,18 +21,18 @@ test('scheduled events enforce participant limits, start and end with exactly-on
   await Promise.all([a,b].map(p=>f.ok(`/api/events/${e.id}/join`,p.cookie,{})));
   assert.equal((await f.request(`/api/events/${e.id}/join`,{cookie:c.cookie,body:{}})).status,400);
   await f.ok(`/api/events/${e.id}/join`,a.cookie,{});
-  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE context=?').get(e.id).n,2);
-  f.db.prepare('UPDATE event_options SET starts_at=? WHERE event_id=?').run(Date.now()-1,e.id);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE context=?').get(e.id)).n,2);
+  (await f.db.prepare('UPDATE event_options SET starts_at=? WHERE event_id=?').run(Date.now()-1,e.id));
   const r=await f.ok('/api/tables',a.cookie,{name:'Scheduled poker',game:'poker',stake:100,context:e.id});
   await f.ok(`/api/tables/${r.id}/join`,b.cookie,{});await f.ok(`/api/tables/${r.id}/start`,a.cookie,{});
   assert.equal((await f.ok(`/api/lobby?context=${e.id}`,a.cookie)).events.find(x=>x.id===e.id).status,'active');
-  f.db.prepare('UPDATE event_options SET ends_at=? WHERE event_id=?').run(Date.now()-1,e.id);
+  (await f.db.prepare('UPDATE event_options SET ends_at=? WHERE event_id=?').run(Date.now()-1,e.id));
   for(let n=0;n<30;n++){if((await f.ok(`/api/tables/${r.id}`,a.cookie)).status==='canceled')break;await new Promise(resolve=>setTimeout(resolve,20));}
   assert.equal((await f.ok(`/api/tables/${r.id}`,a.cookie)).status,'canceled');
   for(const p of [a,b])assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`,p.cookie)).wallet,{available:1000,reserved:0});
   await f.restart();
   assert.equal((await f.ok(`/api/lobby?context=${e.id}`,a.cookie)).events.find(x=>x.id===e.id).status,'completed');
-  assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action='event-scheduled-status' AND target=?").get(e.id).n,2);
+  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action='event-scheduled-status' AND target=?").get(e.id)).n,2);
 });
 
 async function newGame(f, game, count=2) {
@@ -101,9 +102,9 @@ test('match safety limit refunds stuck matches once', async t => {
   const r = await f.ok('/api/tables', a.cookie, { name: 'Long match', game: 'chromatic', stake: 100, context: 'casual' });
   await f.ok(`/api/tables/${r.id}/join`, b.cookie, {});
   await f.ok(`/api/tables/${r.id}/start`, a.cookie, {});
-  const stored = JSON.parse(f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id).data);
+  const stored = JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
   stored.started = Date.now() - 3600001;
-  f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored), r.id);
+  (await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored), r.id));
   for (let n=0;n<30;n++) {
     if ((await f.ok(`/api/tables/${r.id}`, a.cookie)).status === 'canceled') break;
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -120,7 +121,8 @@ async function fixture(t) {
   let app;
   let base;
   async function start() {
-    app = createApp({ dbPath, setupToken, secureCookies: false, tickMs: 50, apiLimit: 100000 });
+    app = await createApp({ dbPath, databaseUrl: '', setupToken, secureCookies: false, tickMs: 50, apiLimit: 100000,
+      ...(process.env.VENATUS_TEST_POSTGRES === '1' ? {storageFactory:()=>postgresStorage(join(directory,'postgres'))} : {}) });
     app.server.listen(0, '127.0.0.1');
     await once(app.server, 'listening');
     base = `http://127.0.0.1:${app.server.address().port}`;
@@ -217,7 +219,7 @@ test('three real clients receive private hands; actions are validated and idempo
   const others = await f.ok(`/api/tables/${table.id}`, nonTurn.cookie);
   assert.ok((await f.request(`/api/tables/${table.id}/action`, { cookie: nonTurn.cookie, body: { actionId: randomUUID(), expectedVersion: others.version, action: { type: 'play', cards: [others.state.hand[0].id] } } })).status >= 400);
   assert.ok((await f.request(`/api/tables/${table.id}/action`, { cookie: turn.cookie, body: { actionId: randomUUID(), expectedVersion: own.version, action: { type: 'play', cards: [others.state.hand[0].id] } } })).status >= 400);
-  const action = { actionId: randomUUID(), expectedVersion: own.version, action: { type: 'play', cards: [own.state.hand[0].id] } };
+  const action = { actionId: randomUUID(), expectedVersion: own.version, action: { type: 'play', rank:own.state.requiredRank || 'A', cards: [own.state.hand[0].id] } };
   await f.ok(`/api/tables/${table.id}/action`, turn.cookie, action);
   const after = await f.ok(`/api/tables/${table.id}`, turn.cookie);
   await f.ok(`/api/tables/${table.id}/action`, turn.cookie, action);
@@ -295,6 +297,28 @@ test('sessions, wallets and room seats survive server restart', async t => {
   assert.equal(lobby.wallet.available, 9750);
   assert.equal(lobby.wallet.reserved, 250);
   assert.equal((await f.ok(`/api/tables/${table.id}`, player.cookie)).players[0].id, player.id);
+  assert.deepEqual((await f.ok('/api/me',player.cookie)).activeTable,{id:table.id,context:'casual'});
+  assert.equal((await f.request('/api/me')).body.activeTable,null);
+});
+
+for (const game of ['bluff','chromatic','poker','ohhell','rummy']) test(`${game} active state and private hands survive restart without timing out during downtime`,async t=>{
+  const f=await fixture(t),g=await newGame(f,game,['bluff','ohhell'].includes(game)?3:2);
+  const before=await g.view(g.players[0]);
+  const row=await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(before.id);
+  const saved=JSON.parse(row.data);
+  saved.savedAt=Date.now()-2*60*60000; saved.started=saved.savedAt-60000;
+  // Keep the running timer away from this fixture until restart.
+  saved.state.deadline=Date.now()+60000;
+  await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(saved),saved.id);
+  await f.restart();
+  const after=await g.view(g.players[0]);
+  assert.equal(after.status,'playing'); assert.ok(after.state.deadline>Date.now());
+  const expected={...before.state,deadline:after.state.deadline};
+  assert.deepEqual(after.state,expected);
+  assert.equal(after.state.hands,undefined);
+  assert.deepEqual((await f.ok('/api/me',g.players[0].cookie)).activeTable,{id:after.id,context:'casual'});
+  await f.ok(`/api/admin/table/${after.id}`,f.owner.cookie,{operation:'cancel'});
+  for(const p of g.players) assert.deepEqual((await f.ok('/api/lobby',p.cookie)).wallet,{available:10000,reserved:0});
 });
 
 test('authenticated WebSockets broadcast changes; alien origins are rejected', async t => {
@@ -331,7 +355,7 @@ async function verifyPayout(f, tableId, players, stake) {
     total += wallet.available;
   }
   assert.equal(total, players.length * 10000);
-  const settlementCount = f.db.prepare("SELECT count(*) AS n FROM ledger WHERE reason='settlement' AND reference=?").get(tableId).n;
+  const settlementCount = (await f.db.prepare("SELECT count(*) AS n FROM ledger WHERE reason='settlement' AND reference=?").get(tableId)).n;
   assert.equal(settlementCount, players.length);
 }
 
@@ -347,18 +371,18 @@ test('complete Bluff match through HTTP actions settles exactly once, including 
     if (snapshot.status === 'finished') break;
     const player = players.find(p => p.id === snapshot.state.turn);
     const own = await f.ok(`/api/tables/${table.id}`, player.cookie);
-    await f.ok(`/api/tables/${table.id}/action`, player.cookie, { actionId: randomUUID(), expectedVersion: own.version, action: { type: 'play', cards: own.state.hand.slice(0, 4).map(c => c.id) } });
+    await f.ok(`/api/tables/${table.id}/action`, player.cookie, { actionId: randomUUID(), expectedVersion: own.version, action: { type: 'play', rank:own.state.requiredRank || 'A', cards: own.state.hand.slice(0, 4).map(c => c.id) } });
     const challenged = await f.ok(`/api/tables/${table.id}`, player.cookie);
     assert.equal(challenged.state.phase, 'challenge');
     assert.equal(challenged.status, 'playing', 'Final cards cannot pay out until challenge window closes');
     // Only the test clock is accelerated. Cards, actions and payouts remain untouched.
-    const row = f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id);
+    const row = (await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id));
     const room = JSON.parse(row.data);
     room.state.deadline = Date.now() - 1;
-    f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(room), table.id);
+    (await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(room), table.id));
     for (let wait = 0; wait < 40; wait++) {
       await new Promise(resolve => setTimeout(resolve, 10));
-      const current = JSON.parse(f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id).data);
+      const current = JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id)).data);
       if (current.state.phase !== 'challenge') break;
     }
   }
@@ -422,7 +446,7 @@ test('revoking a session rejects an already-started streamed action', async t =>
   assert.equal((await finish()).status, 401);
   const admin = await f.ok('/api/admin', f.owner.cookie);
   assert.ok(!admin.tables.some(table => table.name === 'Stale Session'));
-  const wallet = f.db.prepare('SELECT available,reserved FROM wallets WHERE user_id=? AND context=?').get(player.id, 'casual');
+  const wallet = (await f.db.prepare('SELECT available,reserved FROM wallets WHERE user_id=? AND context=?').get(player.id, 'casual'));
   assert.equal(wallet.available, 10000);
   assert.equal(wallet.reserved, 0);
 });
@@ -447,15 +471,15 @@ test('moderator demotion and session revocation invalidate pending administrativ
 
 test('wallet ledger and administrative audit records reject updates and deletions', async t => {
   const f = await fixture(t);
-  const beforeLedger = f.db.prepare('SELECT count(*) AS n FROM ledger').get().n;
-  const beforeAudit = f.db.prepare('SELECT count(*) AS n FROM audit').get().n;
+  const beforeLedger = (await f.db.prepare('SELECT count(*) AS n FROM ledger').get()).n;
+  const beforeAudit = (await f.db.prepare('SELECT count(*) AS n FROM audit').get()).n;
   assert.ok(beforeLedger > 0 && beforeAudit > 0);
-  assert.throws(() => f.db.prepare('UPDATE ledger SET delta=99999').run(), /append-only/);
-  assert.throws(() => f.db.prepare('DELETE FROM ledger').run(), /append-only/);
-  assert.throws(() => f.db.prepare("UPDATE audit SET detail='{}'").run(), /append-only/);
-  assert.throws(() => f.db.prepare('DELETE FROM audit').run(), /append-only/);
-  assert.equal(f.db.prepare('SELECT count(*) AS n FROM ledger').get().n, beforeLedger);
-  assert.equal(f.db.prepare('SELECT count(*) AS n FROM audit').get().n, beforeAudit);
+  await assert.rejects(async () => (await f.db.prepare('UPDATE ledger SET delta=99999').run()), /append-only/);
+  await assert.rejects(async () => (await f.db.prepare('DELETE FROM ledger').run()), /append-only/);
+  await assert.rejects(async () => (await f.db.prepare("UPDATE audit SET detail='{}'").run()), /append-only/);
+  await assert.rejects(async () => (await f.db.prepare('DELETE FROM audit').run()), /append-only/);
+  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM ledger').get()).n, beforeLedger);
+  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM audit').get()).n, beforeAudit);
 });
 
 test('clients cannot assign privileges, balances, pot values or game outcomes', async t => {
@@ -481,7 +505,7 @@ test('clients cannot assign privileges, balances, pot values or game outcomes', 
   const { wallet } = await f.ok('/api/lobby', player.cookie);
   assert.equal(wallet.available, 9750);
   assert.equal(wallet.reserved, 250);
-  assert.equal(f.db.prepare("SELECT count(*) AS n FROM ledger WHERE reason='settlement'").get().n, 0);
+  assert.equal((await f.db.prepare("SELECT count(*) AS n FROM ledger WHERE reason='settlement'").get()).n, 0);
 });
 
 test('simultaneous seat requests cannot spend one wallet twice', async t => {
@@ -515,7 +539,7 @@ test('rejoining a waiting table creates a new reservation and exact refund each 
     assert.equal(wallet.available, 10000);
     assert.equal(wallet.reserved, 0);
   }
-  const rows = f.db.prepare("SELECT reason,count(*) AS n FROM ledger WHERE user_id=? AND reason IN ('reserve','refund') GROUP BY reason").all(player.id);
+  const rows = (await f.db.prepare("SELECT reason,count(*) AS n FROM ledger WHERE user_id=? AND reason IN ('reserve','refund') GROUP BY reason").all(player.id));
   assert.equal(rows.find(row => row.reason === 'reserve').n, 3);
   assert.equal(rows.find(row => row.reason === 'refund').n, 3);
 });
