@@ -1,0 +1,2 @@
+# Venatus Casino
+Use Node ESM, built-in SQLite, and ws. No real money, purchases, transfers, or redemptions. All game actions and chip changes are server authoritative. Never expose opponent cards. Changes to wallets and room state share a database transaction. Test game rules, privacy, settlement idempotency and event isolation. Preserve supplied logo proportions. Unfinished games must not be playable.
