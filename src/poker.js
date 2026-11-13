@@ -72,9 +72,9 @@ function begin(g,now,first=false){
  pay(g,g.smallBlindPlayer,g.smallBlind);pay(g,g.bigBlindPlayer,g.bigBlind);g.currentBet=g.bigBlind;g.pending=g.players.filter(p=>canAct(g,p));
  g.turn=g.bigBlindPlayer;g.message=`Hand ${g.handNumber}. Blinds ${g.smallBlind}/${g.bigBlind}.`;advance(g,now);
 }
-export function createPoker(players,now=Date.now(),{buyIn=250}={}){
+export function createPoker(players,now=Date.now(),{buyIn=250,smallBlind:configuredSmall,bigBlind:configuredBig}={}){
  check(players.length>=2&&players.length<=6&&new Set(players).size===players.length,'Poker needs 2–6 distinct players');check(Number.isSafeInteger(buyIn)&&buyIn>=10,'Invalid buy-in');
- const smallBlind=Math.max(1,Math.floor(buyIn/100));const g={type:'poker',players:[...players],stacks:Object.fromEntries(players.map(p=>[p,buyIn])),buyIn,smallBlind,bigBlind:smallBlind*2,dealer:players[0],handNumber:0,moves:0};begin(g,now,true);return g;
+ const smallBlind=configuredSmall??Math.max(1,Math.floor(buyIn/100)),bigBlind=configuredBig??smallBlind*2;check(Number.isSafeInteger(smallBlind)&&Number.isSafeInteger(bigBlind)&&smallBlind>=1&&bigBlind>smallBlind&&bigBlind<=buyIn,'Invalid blinds');const g={type:'poker',players:[...players],stacks:Object.fromEntries(players.map(p=>[p,buyIn])),buyIn,smallBlind,bigBlind,dealer:players[0],handNumber:0,moves:0};begin(g,now,true);return g;
 }
 function raiseAllowed(g,id){return g.players.some(p=>p!==id&&canAct(g,p)) && (g.actedAt[id]===undefined || (g.lastAction[id]==='check'&&g.actedAt[id]===0) || g.currentBet-g.actedAt[id]>=g.lastRaise);}
 export function actPoker(original,id,a,now=Date.now()){

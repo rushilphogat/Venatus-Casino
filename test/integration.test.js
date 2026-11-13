@@ -114,7 +114,7 @@ test('match safety limit refunds stuck matches once', async t => {
   for (const p of [a,b]) assert.deepEqual((await f.ok('/api/lobby', p.cookie)).wallet, { available: 10000, reserved: 0 });
 });
 
-async function fixture(t) {
+async function fixture(t, legacy = true) {
   const directory = await mkdtemp(join(tmpdir(), 'venatus-test-'));
   const dbPath = join(directory, 'casino.sqlite');
   const setupToken = randomUUID();
@@ -139,9 +139,12 @@ async function fixture(t) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const contentType = response.headers.get('content-type') || '';
+    const payload=contentType.includes('application/json')?await response.json():await response.text();
+    // Seed pre-migration rooms to preserve regression coverage of existing wallet-backed casual games.
+    if(legacy&&path==='/api/tables'&&response.ok&&(!body.context||body.context==='casual')&&body.practice===undefined){const stored=JSON.parse((await app.db.prepare('SELECT data FROM rooms WHERE id=?').get(payload.id)).data);stored.practice=false;stored.stake=body.stake;await app.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),stored.id);const uid=stored.players[0].id;await app.db.prepare('UPDATE wallets SET available=available-?,reserved=reserved+? WHERE user_id=? AND context=?').run(body.stake,body.stake,uid,'casual');await app.db.prepare('INSERT INTO ledger VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),Date.now(),uid,'casual',-body.stake,body.stake,'reserve',stored.id+':1');payload.practice=false;payload.stake=body.stake;}
     return {
       status: response.status,
-      body: contentType.includes('application/json') ? await response.json() : await response.text(),
+      body: payload,
       cookie: response.headers.get('set-cookie')?.split(';')[0],
     };
   }
@@ -154,6 +157,7 @@ async function fixture(t) {
     const result = await request(owner ? '/api/setup' : '/api/register', { body: { name, password, ...(owner ? { token: setupToken } : {}) } });
     assert.ok(result.status >= 200 && result.status < 300, JSON.stringify(result.body));
     assert.ok(result.cookie, 'Authentication issues a cookie');
+    if(legacy){await app.db.prepare('INSERT INTO wallets VALUES(?,?,?,?)').run(result.body.user.id,'casual',10000,0);await app.db.prepare('INSERT INTO ledger VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),Date.now(),result.body.user.id,'casual',10000,0,'allocation','casual');}
     return { cookie: result.cookie, ...result.body.user };
   }
   const owner = await account('Casino Owner', true);
@@ -483,16 +487,16 @@ test('wallet ledger and administrative audit records reject updates and deletion
 });
 
 test('clients cannot assign privileges, balances, pot values or game outcomes', async t => {
-  const f = await fixture(t);
+  const f = await fixture(t,false);
   const registered = await f.request('/api/register', { body: { name: 'Forged Fields', password, role: 'superadmin', balance: 900000, available: 900000 } });
   assert.ok(registered.status >= 200 && registered.status < 300);
   assert.equal(registered.body.user.role, 'player');
   const player = { ...registered.body.user, cookie: registered.cookie };
   const opponent = await f.account('Fair Opponent');
-  assert.equal((await f.ok('/api/lobby', player.cookie)).wallet.available, 10000);
-  const table = await f.ok('/api/tables', player.cookie, { name: 'Honest Pot', game: 'chromatic', context: 'casual', stake: 250,
+  assert.equal((await f.ok('/api/lobby', player.cookie)).wallet.available, 0);
+  const table = await f.ok('/api/tables', player.cookie, { name: 'Honest Pot', game: 'chromatic', context: 'casual', stake: 250,practice:true,
     pot: 999999, players: [{ id: 'forged' }], state: { phase: 'finished', winner: player.id }, winner: player.id, balance: 999999 });
-  assert.equal(table.pot, 250);
+  assert.equal(table.pot, 0);
   assert.equal(table.state, null);
   assert.deepEqual(table.players.map(p => p.id), [player.id]);
   await f.ok(`/api/tables/${table.id}/join`, opponent.cookie, {});
@@ -503,8 +507,8 @@ test('clients cannot assign privileges, balances, pot values or game outcomes', 
   assert.equal(result.status, 'playing');
   assert.equal(result.state.winner, null);
   const { wallet } = await f.ok('/api/lobby', player.cookie);
-  assert.equal(wallet.available, 9750);
-  assert.equal(wallet.reserved, 250);
+  assert.equal(wallet.available, 0);
+  assert.equal(wallet.reserved, 0);
   assert.equal((await f.db.prepare("SELECT count(*) AS n FROM ledger WHERE reason='settlement'").get()).n, 0);
 });
 
@@ -542,4 +546,91 @@ test('rejoining a waiting table creates a new reservation and exact refund each 
   const rows = (await f.db.prepare("SELECT reason,count(*) AS n FROM ledger WHERE user_id=? AND reason IN ('reserve','refund') GROUP BY reason").all(player.id));
   assert.equal(rows.find(row => row.reason === 'reserve').n, 3);
   assert.equal(rows.find(row => row.reason === 'refund').n, 3);
+});
+
+test('practice bots in every game never touch wallets and leaving cancels a solo practice room', async t=>{
+  const f=await fixture(t),p=await f.account('Practice Player');
+  for(const game of ['bluff','chromatic','poker','ohhell','rummy']) {
+    const r=await f.ok('/api/tables',p.cookie,{name:'Practice '+game,game,stake:game==='poker'?137:0,practice:true,bots:2});
+    assert.equal(r.practice,true);assert.equal(r.players.filter(p=>p.bot).length,2);
+    const started=await f.ok(`/api/tables/${r.id}/start`,p.cookie,{});assert.equal(started.status,'playing');
+    await f.ok(`/api/tables/${r.id}/leave`,p.cookie,{});
+    assert.equal((await f.ok(`/api/tables/${r.id}`,p.cookie)).status,'canceled');
+    assert.deepEqual((await f.ok('/api/lobby',p.cookie)).wallet,{available:10000,reserved:0});
+  }
+  assert.equal((await f.request('/api/tables',{cookie:p.cookie,body:{name:'No farming',game:'poker',stake:100,bots:2,context:'not-an-event'}})).status,400);
+});
+
+test('active leave frees the player, protects committed stakes and rejects further play',async t=>{
+  const f=await fixture(t),g=await newGame(f,'chromatic'),p=g.players[0],other=g.players[1];
+  await f.ok(`/api/tables/${g.room.id}/leave`,p.cookie,{});
+  assert.equal((await f.ok('/api/me',p.cookie)).activeTable,null);
+  assert.deepEqual((await f.ok('/api/lobby',p.cookie)).wallet,{available:9900,reserved:100});
+  const r=await g.view(p);assert.equal(r.state,null);assert.equal(r.players.find(x=>x.id===p.id).left,true);
+  assert.equal((await f.request(`/api/tables/${r.id}/action`,{cookie:p.cookie,body:{actionId:randomUUID(),expectedVersion:r.version,action:{type:'draw'}}})).status,403);
+  await f.ok('/api/tables',p.cookie,{name:'New seat',game:'bluff',stake:7});
+  await f.ok(`/api/tables/${r.id}/leave`,other.cookie,{});
+  assert.deepEqual((await f.ok('/api/lobby',other.cookie)).wallet,{available:10000,reserved:0});
+  assert.deepEqual((await f.ok('/api/lobby',p.cookie)).wallet,{available:9993,reserved:7});
+});
+
+test('modern casual tables persist across rematches, invites, bots and host controls without wallets',async t=>{
+  const f=await fixture(t,false),a=await f.account('Modern Host'),b=await f.account('Modern Friend'),c=await f.account('Late Friend');
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets').get()).n,0);
+  let r=await f.ok('/api/tables',a.cookie,{name:'Always open',game:'poker',stake:1000,capacity:3,smallBlind:15,bigBlind:30});
+  assert.equal(r.practice,true);assert.equal(r.capacity,3);
+  await f.ok(`/api/tables/${r.id}/join`,b.cookie,{});
+  r=await f.ok(`/api/tables/${r.id}/start`,a.cookie,{});assert.equal(r.state.smallBlind,15);assert.equal(r.state.bigBlind,30);
+  const actor=r.state.turn===a.id?a:b;
+  r=await f.ok(`/api/tables/${r.id}/action`,actor.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'fold'}});
+  r=await f.ok(`/api/tables/${r.id}/action`,a.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'cashout'}});
+  assert.equal(r.status,'finished');
+  await f.ok('/api/rooms/join',c.cookie,{code:r.code});
+  assert.equal((await f.request(`/api/tables/${r.id}/manage`,{cookie:b.cookie,body:{operation:'rematch'}})).status,403);
+  r=await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'rematch'});assert.equal(r.status,'waiting');assert.equal(r.players.length,3);
+  await f.ok(`/api/tables/${r.id}/leave`,c.cookie,{});
+  r=await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'fill-bots',difficulty:'hard'});assert.equal(r.players.filter(p=>p.bot).length,1);
+  const bot=r.players.find(p=>p.bot);assert.equal(bot.difficulty,'hard');
+  await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'remove-bot',botId:bot.id});
+  await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'close'});
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets').get()).n,0);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM ledger').get()).n,0);
+});
+
+test('event range, private invitations, independent wallets and final standings remain authoritative',async t=>{
+  const f=await fixture(t,false),a=await f.account('Event Alice'),b=await f.account('Event Bob'),c=await f.account('Event Cara');
+  const e=await f.ok('/api/admin/event',f.owner.cookie,{name:'Modern Event',description:'Club night',startingChips:1000,stakes:[0,100],minStake:0,maxStake:500,games:['poker','chromatic','bluff','ohhell','rummy']});
+  await f.ok(`/api/admin/event/${e.id}`,f.owner.cookie,{status:'active'});
+  await Promise.all([a,b].map(p=>f.ok(`/api/events/${e.id}/join`,p.cookie,{})));
+  await f.ok(`/api/events/${e.id}/join`,a.cookie,{});
+  const e2=await f.ok('/api/admin/event',f.owner.cookie,{name:'Second Event',startingChips:2000,stakes:[100],games:['poker']});await f.ok(`/api/admin/event/${e2.id}`,f.owner.cookie,{status:'active'});await f.ok(`/api/events/${e2.id}/join`,a.cookie,{});
+  const edit=await f.ok(`/api/admin/event/${e.id}`,f.owner.cookie,{operation:'configure',registrationOpen:false,endsAt:Date.now()+3600000});assert.equal(edit.registrationOpen,false);assert.equal(edit.description,'Club night');
+  assert.equal((await f.request(`/api/events/${e.id}/join`,{cookie:c.cookie,body:{}})).status,400);
+  let r=await f.ok('/api/tables',a.cookie,{name:'Private event table',context:e.id,private:true,game:'poker',stake:137,smallBlind:3,bigBlind:6});
+  assert.equal((await f.request('/api/rooms/join',{cookie:c.cookie,body:{code:r.code}})).status,400);
+  await f.ok('/api/rooms/join',b.cookie,{code:r.code});
+  assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`,a.cookie)).wallet,{available:863,reserved:137});
+  assert.deepEqual((await f.ok(`/api/lobby?context=${e2.id}`,a.cookie)).wallet,{available:2000,reserved:0});
+  r=await f.ok(`/api/tables/${r.id}/start`,a.cookie,{});const actor=r.state.turn===a.id?a:b;
+  r=await f.ok(`/api/tables/${r.id}/action`,actor.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'fold'}});
+  r=await f.ok(`/api/tables/${r.id}/action`,a.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'cashout'}});
+  let standings=(await f.ok(`/api/lobby?context=${e.id}`,a.cookie)).leaderboard;assert.equal(standings.reduce((n,p)=>n+p.balance,0),2000);assert.equal(standings[0].gamesPlayed,1);assert.equal(standings[0].profit,standings[0].balance-1000);
+  assert.equal((await f.request('/api/tables',{cookie:a.cookie,body:{name:'Bot farming',context:e.id,game:'poker',stake:100,bots:1}})).status,400);
+  await f.ok(`/api/admin/event/${e.id}`,f.owner.cookie,{status:'completed'});standings=(await f.ok(`/api/lobby?context=${e.id}`,f.owner.cookie)).leaderboard;
+  await f.ok(`/api/admin/user/${b.id}`,f.owner.cookie,{banned:true});
+  assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`,f.owner.cookie)).leaderboard,standings);
+  assert.equal((await f.request(`/api/admin/user/${a.id}`,{cookie:f.owner.cookie,body:{context:e.id,adjustment:10,reason:'Must remain locked'}})).status,400);
+  assert.equal((await f.request(`/api/admin/event/${e.id}`,{cookie:f.owner.cookie,body:{operation:'configure',registrationOpen:true}})).status,400);
+  await f.restart();assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`,f.owner.cookie)).leaderboard,standings);
+});
+
+test('casual Poker adds and replaces seats between hands without resetting stacks',async t=>{
+  const f=await fixture(t,false),a=await f.account('Seat Host'),b=await f.account('Seat Friend'),c=await f.account('Seat Arrival');
+  let r=await f.ok('/api/tables',a.cookie,{name:'Flexible poker',game:'poker',stake:1000,capacity:4});await f.ok(`/api/tables/${r.id}/join`,b.cookie,{});r=await f.ok(`/api/tables/${r.id}/start`,a.cookie,{});
+  const actor=r.state.turn===a.id?a:b;r=await f.ok(`/api/tables/${r.id}/action`,actor.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'fold'}});const stacks={...r.state.stacks};
+  r=await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'add-bot'});const bot=r.players.find(p=>p.bot);assert.equal(r.state.stacks[bot.id],1000);assert.equal(r.state.stacks[a.id],stacks[a.id]);
+  r=await f.ok('/api/rooms/join',c.cookie,{code:r.code});assert.equal(r.state.stacks[c.id],1000);
+  r=await f.ok(`/api/tables/${r.id}/manage`,a.cookie,{operation:'remove-bot',botId:bot.id});assert.equal(r.state.stacks[bot.id],undefined);assert.equal(r.state.stacks[b.id],stacks[b.id]);
+  r=await f.ok(`/api/tables/${r.id}/action`,a.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'cashout'}});assert.equal(r.status,'finished');assert.equal(Object.values(r.state.payouts).reduce((a,b)=>a+b,0),3000);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets').get()).n,0);
 });

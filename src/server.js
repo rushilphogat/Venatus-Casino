@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { createGame, actGame, tickGame, viewGame } from './games.js';
+import { botAction } from './bots.js';
 
 const scrypt = promisify(scryptCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,7 +24,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
   const { db, get, all, run, tx } = storage;
   const settings = async () => ({ poker:true, ohhell:true, rummy:true, ...JSON.parse((await get('SELECT data FROM settings WHERE id=1')).data) });
   const audit = async (actor, action, target, detail) => (await run('INSERT INTO audit VALUES(?,?,?,?,?,?)', randomUUID(), Date.now(), actor, action, target, JSON.stringify(detail)));
-  const event = async id => { const e = (await get('SELECT * FROM events WHERE id=?', id)); if (!e) fail('Event not found', 404); const o=(await get('SELECT * FROM event_options WHERE event_id=?',id)); return { ...e, startsAt:o?.starts_at??null, endsAt:o?.ends_at??null, participantLimit:o?.participant_limit??null, participants:(await get('SELECT COUNT(*) AS n FROM wallets WHERE context=?',id)).n, stakes: JSON.parse(e.stakes), games: JSON.parse(e.games) }; };
+  const event = async id => { const e = (await get('SELECT * FROM events WHERE id=?', id)); if (!e) fail('Event not found', 404); const o=(await get('SELECT * FROM event_options WHERE event_id=?',id)); const meta=JSON.parse((await get('SELECT data FROM event_metadata WHERE event_id=?',id))?.data||'{}'); return { ...e, ...meta, startsAt:o?.starts_at??null, endsAt:o?.ends_at??null, participantLimit:o?.participant_limit??null, participants:(await get('SELECT COUNT(*) AS n FROM wallets WHERE context=?',id)).n, stakes: JSON.parse(e.stakes), games: JSON.parse(e.games) }; };
   const events = async () => await Promise.all((await all('SELECT id FROM events ORDER BY created DESC')).map(async e => (await event(e.id))));
   const rooms = async (activeOnly = false) => (await all(activeOnly ? "SELECT data FROM rooms WHERE json_extract(data,'$.status') IN ('waiting','playing','paused')" : 'SELECT data FROM rooms')).map(r => JSON.parse(r.data));
   const room = async id => { const r = (await get('SELECT data FROM rooms WHERE id=?', id)); if (!r) fail('Table not found', 404); return JSON.parse(r.data); };
@@ -41,29 +42,40 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     if (!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', id, context))) (await money(id, context, amount, 0, 'allocation', context));
   };
   const safeRoom = (r, user) => ({ id: r.id, name: r.name, game: r.game, context: r.context, stake: r.stake, status: r.status,
-    players: r.players, host: r.host, private: r.private, pot: r.stake * r.players.length, version: r.version, created: r.created, finished: r.finished, payout: r.payouts?.[user.id],
+    joinable: acceptsSeat(r), practice:!!r.practice, capacity:r.capacity||6, botDifficulty:r.botDifficulty||'medium', smallBlind:r.smallBlind, bigBlind:r.bigBlind, players: r.players, host: r.host, private: r.private, pot: r.stake * r.players.length, version: r.version, created: r.created, finished: r.finished, payout: r.payouts?.[user.id],
     code: r.players.some(p => p.id === user.id) ? r.code : undefined,
-    state: r.state && r.players.some(p => p.id === user.id) ? viewGame(r.state, user.id) : null });
+    state: r.state && r.players.some(p => p.id === user.id && !p.left) ? viewGame(r.state, user.id) : null });
+  const betweenCasualHands = r => r.practice&&r.game==='poker'&&r.status==='playing'&&r.state?.phase==='between-hands';
+  const acceptsSeat = r => r.players.length < (r.capacity || 6) &&
+    (r.status === 'waiting' || (r.practice && r.status === 'finished') || betweenCasualHands(r));
+  const syncPracticeSeats = r => {
+    if(!betweenCasualHands(r))return;
+    const g=r.state,ids=r.players.map(p=>p.id);
+    for(const id of ids)if(!g.players.includes(id)){g.stacks[id]=r.stake;g.hands[id]=[];g.bets[id]=0;g.contributions[id]=0;g.folded[id]=true;}
+    for(const id of g.players.filter(id=>!ids.includes(id)))for(const key of ['stacks','hands','bets','contributions','folded','actedAt','lastAction','showdown'])if(g[key])delete g[key][id];
+    g.players=ids;g.pending=(g.pending||[]).filter(id=>ids.includes(id));if(!ids.includes(g.dealer))g.dealer=ids[0];if(!ids.includes(g.turn))g.turn=ids.find(id=>g.stacks[id]>0)||ids[0];g.deadline=Date.now()+15000;
+  };
+  const bankroll = r => r.practice&&r.game==='poker'&&r.state ? Object.values(r.state.stacks).reduce((a,b)=>a+b,0)+Object.values(r.state.contributions).reduce((a,b)=>a+b,0) : r.stake*r.players.length;
   const finish = async r => {
     if (r.settled || r.state?.phase !== 'finished') return;
     const winner = r.state.winner;
     if (winner && !r.players.some(p => p.id === winner)) throw new Error('Engine returned unknown winner');
-    const pot = r.stake * r.players.length;
+    const pot = bankroll(r);
     const winners = r.state.winners?.length ? r.state.winners : winner ? [winner] : [];
     if (winners.some(id => !r.players.some(p => p.id === id)) || new Set(winners).size !== winners.length) throw new Error('Invalid winners');
     const payouts = r.state.payouts || Object.fromEntries(r.players.map(p => [p.id, winners.length ? (winners.includes(p.id) ? Math.floor(pot / winners.length) + (winners.indexOf(p.id) < pot % winners.length ? 1 : 0) : 0) : r.stake]));
     if (Object.keys(payouts).length !== r.players.length || r.players.some(p => !integer(payouts[p.id], 0, pot)) || Object.values(payouts).reduce((a,b)=>a+b,0) !== pot) throw new Error('Payouts must conserve every committed chip');
     r.payouts = payouts;
-    for (const p of r.players) (await money(p.id, r.context, payouts[p.id], -r.stake, winners.length || r.state.payouts ? 'settlement' : 'draw-refund', r.id));
+    for (const p of r.players.filter(p=>!r.practice)) (await money(p.id, r.context, payouts[p.id], -r.stake, winners.length || r.state.payouts ? 'settlement' : 'draw-refund', r.id));
     r.settled = true; r.status = 'finished'; r.finished = Date.now();
     (await audit('system', 'match-settled', r.id, { winner, pot: r.stake * r.players.length }));
   };
   const cancel = async (r, actor = 'system', reason = 'Canceled') => {
     if (r.settled) return r;
     const payouts = Object.fromEntries(r.players.map(p => [p.id, r.game === 'poker' && r.state ? r.state.stacks[p.id] + r.state.contributions[p.id] : r.stake]));
-    if (Object.values(payouts).some(n => !integer(n, 0, r.stake * r.players.length)) || Object.values(payouts).reduce((a,b)=>a+b,0) !== r.stake * r.players.length) throw new Error('Cancellation must conserve chips');
+    if (Object.values(payouts).some(n => !integer(n, 0, bankroll(r))) || Object.values(payouts).reduce((a,b)=>a+b,0) !== bankroll(r)) throw new Error('Cancellation must conserve chips');
     r.payouts = payouts;
-    for (const p of r.players) (await money(p.id, r.context, payouts[p.id], -r.stake, 'refund', `${r.id}:${r.seatVersions?.[p.id] || 0}`));
+    for (const p of r.players.filter(p=>!r.practice)) (await money(p.id, r.context, payouts[p.id], -r.stake, 'refund', `${r.id}:${r.seatVersions?.[p.id] || 0}`));
     r.settled = true; r.status = 'canceled'; r.finished = Date.now();
     (await audit(actor, 'table-canceled', r.id, { reason })); return (await save(r));
   };
@@ -75,6 +87,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       else if(e.status==='registration' && e.startsAt && e.startsAt<=now) status='active';
       if(!status)continue;
       if(status==='completed')for(const r of (await rooms(true)).filter(r=>r.context===e.id))(await cancel(r,'system','Scheduled event end'));
+      if(status==='completed')await run('INSERT INTO event_results VALUES(?,?) ON CONFLICT(event_id) DO NOTHING',e.id,JSON.stringify(await board(e.id)));
       (await run('UPDATE events SET status=? WHERE id=?',status,e.id));(await audit('system','event-scheduled-status',e.id,{before:e.status,after:status}));changed=true;
     }
     return changed;
@@ -112,34 +125,48 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     try { const b = JSON.parse(data || '{}'); if (!b || Array.isArray(b) || typeof b !== 'object') fail('JSON object required'); return b; } catch { fail('Invalid JSON'); }
   }
   const board = async context => {
-    const wins = new Map();
-    for(const r of (await rooms()).filter(r=>r.context===context&&r.status==='finished')) for(const id of r.state.winners?.length ? r.state.winners : r.state.winner ? [r.state.winner] : []) wins.set(id,(wins.get(id)||0)+1);
+    const frozen=await get('SELECT data FROM event_results WHERE event_id=?',context);if(frozen)return JSON.parse(frozen.data);
+    const wins = new Map(), played=new Map();
+    const allocation=context==='casual'?0:(await event(context)).startingChips;
+    for(const r of (await rooms()).filter(r=>!r.practice&&r.context===context&&r.status==='finished'))for(const p of r.players)played.set(p.id,(played.get(p.id)||0)+1);
+    for(const r of (await rooms()).filter(r=>!r.practice&&r.context===context&&r.status==='finished')) for(const id of r.state.winners?.length ? r.state.winners : r.state.winner ? [r.state.winner] : []) wins.set(id,(wins.get(id)||0)+1);
     const adjustments = new Map();
-    for (const r of (await rooms(true))) if (r.context === context && r.game === 'poker' && r.state) for (const p of r.players) adjustments.set(p.id, (adjustments.get(p.id) || 0) + r.state.stacks[p.id] + r.state.contributions[p.id] - r.stake);
-    return (await all(`SELECT u.name,u.id,w.available+w.reserved AS balance FROM wallets w JOIN users u ON u.id=w.user_id WHERE w.context=? AND u.banned=0`, context)).map(u => ({ ...u, balance: u.balance + (adjustments.get(u.id) || 0), wins: wins.get(u.id) || 0 })).sort((a,b)=>b.balance-a.balance || a.name.localeCompare(b.name)).slice(0,100);
+    for (const r of (await rooms(true))) if (!r.practice && r.context === context && r.game === 'poker' && r.state) for (const p of r.players) adjustments.set(p.id, (adjustments.get(p.id) || 0) + r.state.stacks[p.id] + r.state.contributions[p.id] - r.stake);
+    return (await all(`SELECT u.name,u.id,w.available+w.reserved AS balance FROM wallets w JOIN users u ON u.id=w.user_id WHERE w.context=? AND u.banned=0`, context)).map(u => ({ ...u, balance: u.balance + (adjustments.get(u.id) || 0), wins: wins.get(u.id) || 0 })).sort((a,b)=>b.balance-a.balance || a.name.localeCompare(b.name)).map((p,i)=>({...p,rank:i+1,profit:p.balance-allocation,gamesPlayed:played.get(p.id)||0}));
+  };
+  await tx(async()=>{for(const e of await events())if(['completed','canceled','archived'].includes(e.status)&&!await get('SELECT event_id FROM event_results WHERE event_id=?',e.id))await run('INSERT INTO event_results VALUES(?,?)',e.id,JSON.stringify(await board(e.id)));});
+  const eventMetadata = (b, previous={}) => {
+    const meta={description:'',registrationOpen:true,botsAllowed:false,visibility:'public',...previous};
+    if(b.description!==undefined){if(typeof b.description!=='string'||b.description.length>1000)fail('Description too long');meta.description=b.description.trim();}
+    if(b.registrationOpen!==undefined){if(typeof b.registrationOpen!=='boolean')fail('Invalid registration setting');meta.registrationOpen=b.registrationOpen;}
+    if(b.botsAllowed===true)fail('Competitive event bots are disabled to prevent chip farming');
+    if(b.visibility!==undefined&&b.visibility!=='public')fail('Events use public discovery; tables may be private');
+    if(b.minStake!==undefined||b.maxStake!==undefined){meta.minStake=b.minStake??meta.minStake;meta.maxStake=b.maxStake??meta.maxStake;if(!integer(meta.minStake,0,100000)||!integer(meta.maxStake,meta.minStake,100000))fail('Invalid event stake range');}
+    return meta;
   };
   const canPlay = async (user, context, game, stake, isPrivate = false) => {
     const s = (await settings()); if (s.maintenance) fail('The casino is under maintenance');
     if (!['bluff', 'chromatic', 'poker', 'ohhell', 'rummy'].includes(game) || !s[game]) fail('This game is unavailable');
-    if (!integer(stake, 10, 100000)) fail('Stake must be between 10 and 100,000 chips');
+    if (!integer(stake, game==='poker'?10:0,100000))fail('Invalid ante or buy-in');
     if (context !== 'casual') {
       const e = (await event(context)); if (e.status !== 'active') fail('Event is not active');
-      if (isPrivate) fail('Private tables are only available in casual mode');
-      if (!e.games.includes(game) || !e.stakes.includes(stake)) fail('Game or stake is not allowed in this event');
+      
+      if (!e.games.includes(game) || (e.minStake!==undefined?stake<e.minStake||stake>e.maxStake:!e.stakes.includes(stake))) fail('Game or stake is not allowed in this event');
       if (!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, context))) fail('Join the event first');
     }
   };
   const freeSeat = async user => {
-    if ((await rooms(true)).some(r => r.players.some(p => p.id === user.id))) fail('Leave or finish your current table first');
+    if ((await rooms(true)).some(r => r.players.some(p => p.id === user.id&&!p.left))) fail('Leave or finish your current table first');
   };
   async function joinTable(r, user, code) {
+    if(r.players.some(p=>p.id===user.id&&p.left))fail('This seat is on autopilot until the game ends');
     if (r.players.some(p => p.id === user.id)) return safeRoom(r, user);
-    if (r.status !== 'waiting' || r.players.length >= 6) fail('Table is not accepting players');
+    if (!acceptsSeat(r)) fail('Table is not accepting players');
     if (r.private && code !== r.code) fail('Room code required', 403);
     (await freeSeat(user)); (await canPlay(user, r.context, r.game, r.stake, r.private));
     r.seatVersions ||= {}; r.seatVersions[user.id] = (r.seatVersions[user.id] || 0) + 1;
-    (await money(user.id, r.context, -r.stake, r.stake, 'reserve', `${r.id}:${r.seatVersions[user.id]}`));
-    r.players.push({ id: user.id, name: user.name }); (await save(r)); return safeRoom(r, user);
+    if(!r.practice)(await money(user.id, r.context, -r.stake, r.stake, 'reserve', `${r.id}:${r.seatVersions[user.id]}`));
+    r.players.push({ id: user.id, name: user.name });syncPracticeSeats(r); (await save(r)); return safeRoom(r, user);
   }
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin');
@@ -151,7 +178,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       if (path === '/health') return send({ status: 'ok' });
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail('Method not allowed', 405);
-        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/style.css': 'style.css', '/logo.png': 'logo.png' };
+        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/experience.js':'experience.js', '/style.css': 'style.css', '/logo.png': 'logo.png' };
         if (!files[path]) fail('Not found', 404);
         const content = readFileSync(resolve(ROOT, 'public', files[path]));
         res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' })[extname(files[path])], 'Cache-Control': 'no-cache' });
@@ -162,7 +189,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       if (!allowedOrigin(req)) fail('Origin not allowed', 403);
       let user = (await authenticate(req));
       if (path === '/api/me' && req.method === 'GET') {
-        const seated = user && (await rooms(true)).find(r => r.players.some(p => p.id === user.id));
+        const seated = user && (await rooms(true)).find(r => r.players.some(p => p.id === user.id&&!p.left));
         return send({ user: user ? publicUser(user) : null, setupRequired: !(await get("SELECT id FROM users WHERE role='superadmin'")),
           activeTable: seated ? {id:seated.id, context:seated.context} : null });
       }
@@ -191,7 +218,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
             if (path === '/api/setup' && (await get("SELECT id FROM users WHERE role='superadmin'"))) fail('Owner has already been configured', 409);
             const id = randomUUID(); const role = path === '/api/setup' ? 'superadmin' : 'player';
             (await run('INSERT INTO users VALUES(?,?,?,?,0,?)', id, name, `${salt}:${hash}`, role, Date.now()));
-            (await initializeWallet(id, 'casual', (await settings()).startingChips)); (await audit(id, 'account-created', id, { role }));
+            (await audit(id, 'account-created', id, { role }));
             return (await get('SELECT * FROM users WHERE id=?', id));
           }));
         }
@@ -207,10 +234,10 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       if (path === '/api/lobby' && req.method === 'GET') {
         const context = url.searchParams.get('context') || 'casual'; if (context !== 'casual') (await event(context));
         return send({ user: publicUser(user), context, events: (await events()), wallet: (await wallet(user.id, context)), participating: !!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, context)), settings: (await settings()),
-          tables: (await rooms()).filter(r => r.context === context && ((!r.private && ['waiting','playing','paused'].includes(r.status)) || r.players.some(p => p.id === user.id))).slice(-100).map(r => safeRoom(r, user)),
+          tables: (await rooms()).filter(r => r.context === context && ((!r.private && (['waiting','playing','paused'].includes(r.status)||r.practice&&r.status==='finished')) || r.players.some(p => p.id === user.id))).slice(-100).map(r => safeRoom(r, user)),
           leaderboard: (await board(context)), history: (await rooms()).filter(r => r.context === context && r.settled && r.players.some(p => p.id === user.id)).slice(-20).reverse().map(r => safeRoom(r, user)) });
       }
-      const tableMatch = /^\/api\/tables\/([^/]+)(?:\/(join|start|leave|action))?$/.exec(path);
+      const tableMatch = /^\/api\/tables\/([^/]+)(?:\/(join|start|leave|action|manage))?$/.exec(path);
       if (tableMatch && req.method === 'GET' && !tableMatch[2]) {
         const r = (await room(tableMatch[1])); if (r.private && !r.players.some(p => p.id === user.id)) fail('Private table', 403);
         return send(safeRoom(r, user));
@@ -234,34 +261,58 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         if (!user) fail('Sign in to continue',401);
         (await scheduledEvents());
         const joinEvent = /^\/api\/events\/([^/]+)\/join$/.exec(path);
-        if (joinEvent) { const e = (await event(joinEvent[1])); if (!['registration','active'].includes(e.status)) fail('Registration is closed'); if(!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?',user.id,e.id)) && e.participantLimit && e.participants>=e.participantLimit)fail('This event has reached its participant limit'); (await initializeWallet(user.id, e.id, e.startingChips)); return { wallet: (await wallet(user.id, e.id)) }; }
+        if (joinEvent) { const e = (await event(joinEvent[1])); if (!['registration','active'].includes(e.status))fail('Registration is closed');if(e.registrationOpen===false&&!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?',user.id,e.id)))fail('Registration is closed'); if(!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?',user.id,e.id)) && e.participantLimit && e.participants>=e.participantLimit)fail('This event has reached its participant limit'); (await initializeWallet(user.id, e.id, e.startingChips)); return { wallet: (await wallet(user.id, e.id)) }; }
         if (path === '/api/tables') {
+          if(b.stake!==undefined&&!integer(b.stake,0,100000))fail('Invalid stake');
+          if(b.bots!==undefined&&!integer(b.bots,0,5))fail('Choose zero to five bots');
+          if((b.bots||b.practice)&&b.context&&b.context!=='casual')fail('Bots are available only in casual play');
+          b.practice=!b.context||b.context==='casual';if(b.practice&&b.game!=='poker')b.stake=0;
+          const minimum=['bluff','ohhell'].includes(b.game)?3:2;
+          if(b.capacity!==undefined&&!integer(b.capacity,minimum,6))fail('Invalid capacity');
+          if((b.bots||0)+1>(b.capacity||6))fail('Bots exceed capacity');
+          if(b.botDifficulty!==undefined&&!['easy','medium','hard'].includes(b.botDifficulty))fail('Invalid bot difficulty');
+          if(b.game==='poker'){const sb=b.smallBlind??Math.max(1,Math.floor(b.stake/100)),bb=b.bigBlind??sb*2;if(!integer(sb,1,b.stake)||!integer(bb,sb+1,b.stake))fail('Blinds must satisfy 1 <= small < big <= buy-in');b.smallBlind=sb;b.bigBlind=bb;}
+
           (await freeSeat(user)); const context = b.context || 'casual'; (await canPlay(user, context, b.game, b.stake, !!b.private));
           if (!text(b.name, 1, 48)) fail('Table name must have 1–48 characters');
           if ((await rooms(true)).length >= 100) fail('Table limit reached');
-          const r = { id: randomUUID(), name: b.name.trim(), context, game: b.game, stake: b.stake, private: !!b.private, code: randomBytes(6).toString('hex').toUpperCase(), host: user.id, players: [], state: null, status: 'waiting', settled: false, created: Date.now(), version: 0 };
-          return (await joinTable(r, user, r.code));
+          const r = { id: randomUUID(), name: b.name.trim(), context, game: b.game, stake: b.stake, practice:b.practice, capacity:b.capacity||6, botDifficulty:b.botDifficulty||'medium',smallBlind:b.smallBlind,bigBlind:b.bigBlind, private: !!b.private, code: randomBytes(6).toString('hex').toUpperCase(), host: user.id, players: [], state: null, status: 'waiting', settled: false, created: Date.now(), version: 0 };
+          await joinTable(r,user,r.code);for(let i=0;i<(b.bots||0);i++)r.players.push({id:'bot-'+randomUUID(),name:'Bot '+(i+1),bot:true,difficulty:r.botDifficulty});await save(r);return safeRoom(r,user);
         }
-        if (path === '/api/rooms/join') { const r = (await rooms()).find(r => r.code === String(b.code).trim().toUpperCase() && !r.settled); if (!r) fail('Room not found', 404); return (await joinTable(r, user, r.code)); }
+        if (path === '/api/rooms/join') { const r = (await rooms()).find(r => r.code === String(b.code).trim().toUpperCase() && (!r.settled||r.practice&&r.status==='finished')); if (!r) fail('Room not found', 404); return (await joinTable(r, user, r.code)); }
         if (tableMatch) {
           const r = (await room(tableMatch[1])); const op = tableMatch[2];
           if (op === 'join') return (await joinTable(r, user, b.code));
           if (!r.players.some(p => p.id === user.id)) fail('You are not seated at this table', 403);
+          if(op==='manage') {
+            if(r.host!==user.id)fail('Only the host can manage this table',403);
+            if(!['waiting','finished'].includes(r.status)&&!betweenCasualHands(r))fail('Manage seats between games');
+            if(b.operation==='close'){if(!r.settled)await cancel(r,user.id,'Host closed table');r.status='canceled';await save(r);return {ok:true};}
+            if(!r.practice)fail('Bots and rematches are available in casual play');
+            if(b.difficulty!==undefined&&!['easy','medium','hard'].includes(b.difficulty))fail('Invalid difficulty');
+            if(b.operation==='rematch'){if(r.status!=='finished')fail('Finish current game first');for(const p of r.players.filter(p=>!p.bot&&!p.left))await freeSeat(p);r.players=r.players.filter(p=>!p.left);r.state=null;r.status='waiting';r.settled=false;r.payouts=null;r.finished=null;r.created=Date.now();r.botMovedAt=null;r.botChallengeChecked=null;}
+            else if(b.operation==='remove-bot'){if(betweenCasualHands(r)&&r.players.length<=2)fail('Poker needs at least two seats');if(!r.players.some(p=>p.id===b.botId&&p.bot))fail('Bot not found');r.players=r.players.filter(p=>p.id!==b.botId);}
+            else if(['add-bot','fill-bots'].includes(b.operation)){const n=b.operation==='fill-bots'?(r.capacity||6)-r.players.length:1;if(r.players.length+n>(r.capacity||6))fail('Table is full');for(let i=0;i<n;i++)r.players.push({id:'bot-'+randomUUID(),name:'Bot '+(r.players.length+1),bot:true,difficulty:b.difficulty||r.botDifficulty||'medium'});}
+            else fail('Unknown operation');syncPracticeSeats(r);await save(r);return safeRoom(r,user);
+          }
           if (op === 'leave') {
-            if (['playing','paused'].includes(r.status)) fail('Finish the game first. Your seat is kept if you disconnect.');
-            if (!r.settled) { (await money(user.id, r.context, r.stake, -r.stake, 'refund', `${r.id}:${r.seatVersions?.[user.id] || 0}`)); r.players = r.players.filter(p => p.id !== user.id); if (!r.players.length) { r.status = 'canceled'; r.settled = true; } else if (r.host === user.id) r.host = r.players[0].id; (await save(r)); }
-            return { ok: true };
+            if(betweenCasualHands(r)){r.players=r.players.filter(p=>p.id!==user.id);syncPracticeSeats(r);if(r.players.length<2||!r.players.some(p=>!p.bot&&!p.left))await cancel(r,user.id,'Table emptied between hands');else{if(r.host===user.id)r.host=r.players.find(p=>!p.bot&&!p.left).id;await save(r);}return {ok:true};}
+            if(['playing','paused'].includes(r.status)){r.players.find(p=>p.id===user.id).left=true;if(!r.players.some(p=>!p.bot&&!p.left))await cancel(r,user.id,'All human players left');else{if(r.host===user.id)r.host=r.players.find(p=>!p.bot&&!p.left).id;await save(r);}return {ok:true,autopilot:!r.settled};}
+            if (!r.settled) { if(!r.practice)(await money(user.id, r.context, r.stake, -r.stake, 'refund', `${r.id}:${r.seatVersions?.[user.id] || 0}`)); r.players = r.players.filter(p => p.id !== user.id); if (!r.players.some(p=>!p.bot&&!p.left)) { r.status = 'canceled'; r.settled = true; } else if (r.host === user.id) r.host = r.players.find(p=>!p.bot&&!p.left).id; (await save(r)); }
+            if(r.settled&&r.practice){r.players=r.players.filter(p=>p.id!==user.id);if(!r.players.some(p=>!p.bot&&!p.left))r.status='canceled';else if(r.host===user.id)r.host=r.players.find(p=>!p.bot&&!p.left).id;await save(r);}
+            return {ok:true};
           }
           if (op === 'start') {
             if (r.host !== user.id) fail('Only the host can deal', 403);
             if (r.status !== 'waiting') fail('Match already started');
-            for (const p of r.players) { if ((await get('SELECT banned FROM users WHERE id=?', p.id)).banned) fail('A seated player is banned'); }
+            for (const p of r.players.filter(p=>!p.bot)) { if ((await get('SELECT banned FROM users WHERE id=?', p.id)).banned) fail('A seated player is banned'); }
             (await canPlay(user, r.context, r.game, r.stake, r.private));
             if (r.players.length < (['bluff','ohhell'].includes(r.game) ? 3 : 2)) fail('More players are needed');
-            r.state = createGame(r.game, r.players.map(p => p.id), Date.now(), {buyIn:r.stake,houseRules:'street'}); r.status = 'playing'; r.started = Date.now(); (await save(r));
+            r.state = createGame(r.game, r.players.map(p => p.id), Date.now(), {buyIn:r.stake,smallBlind:r.smallBlind,bigBlind:r.bigBlind,houseRules:'street'}); r.status = 'playing'; r.started = Date.now(); (await save(r));
             (await audit(user.id, 'match-started', r.id, { game: r.game, players: r.players.map(p => p.id) })); return safeRoom(r, user);
           }
           if (op === 'action') {
+            if(r.players.find(p=>p.id===user.id)?.left)fail('Your seat is on autopilot',403);
             if (!text(b.actionId, 8, 100)) fail('Action identifier required');
             if ((await get('SELECT action_id FROM actions WHERE room_id=? AND user_id=? AND action_id=?', r.id, user.id, b.actionId))) return safeRoom(r, user);
             if (r.status !== 'playing') fail('Match is not running');
@@ -276,17 +327,28 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         if (path.startsWith('/api/admin/')) {
           requireAdmin(user);
           if (path === '/api/admin/event') {
-            requireOwner(user);
-            if (!text(b.name, 3, 80) || !integer(b.startingChips, 100, 1000000) || !Array.isArray(b.stakes) || !b.stakes.length || b.stakes.length > 20 || b.stakes.some(s => !integer(s, 10, b.startingChips)) || !Array.isArray(b.games) || !b.games.length || b.games.some(g => !['bluff','chromatic','poker','ohhell','rummy'].includes(g))) fail('Invalid event settings');
+            requireOwner(user);const meta=eventMetadata(b);
+            if (!text(b.name, 3, 80) || !integer(b.startingChips, 100, 1000000) || !Array.isArray(b.stakes) || !b.stakes.length || b.stakes.length > 20 || b.stakes.some(s => !integer(s, 0, b.startingChips)) || !Array.isArray(b.games) || !b.games.length || b.games.some(g => !['bluff','chromatic','poker','ohhell','rummy'].includes(g))) fail('Invalid event settings');
             const startsAt=b.startsAt??null, endsAt=b.endsAt??null, participantLimit=b.participantLimit??null;
             if(startsAt!==null&&!integer(startsAt,Date.now(),Date.now()+5*366*86400000) || endsAt!==null&&!integer(endsAt,Date.now()+1,Date.now()+5*366*86400000) || startsAt!==null&&endsAt!==null&&endsAt<=startsAt || participantLimit!==null&&!integer(participantLimit,2,10000))fail('Invalid event schedule or participant limit');
             const id = randomUUID(); (await run('INSERT INTO events VALUES(?,?,?,?,?,?,?)', id, b.name.trim(), 'draft', b.startingChips, JSON.stringify([...new Set(b.stakes)]), JSON.stringify([...new Set(b.games)]), Date.now()));
             (await run('INSERT INTO event_options VALUES(?,?,?,?)',id,startsAt,endsAt,participantLimit));
+            await run('INSERT INTO event_metadata VALUES(?,?)',id,JSON.stringify(meta));
             (await audit(user.id, 'event-created', id, b)); return (await event(id));
           }
           const em = /^\/api\/admin\/event\/([^/]+)$/.exec(path);
           if (em) {
             requireOwner(user); const e = (await event(em[1]));
+            if(b.operation==='configure'){
+              if(['completed','canceled','archived'].includes(e.status))fail('Final event configuration is locked');
+              const old=JSON.parse((await get('SELECT data FROM event_metadata WHERE event_id=?',e.id))?.data||'{}');const meta=eventMetadata(b,old);
+              const startsAt=b.startsAt===undefined?e.startsAt:b.startsAt,endsAt=b.endsAt===undefined?e.endsAt:b.endsAt;
+              if(b.startsAt!==undefined&&(!['draft','registration'].includes(e.status)||startsAt!==null&&!integer(startsAt,Date.now(),Date.now()+5*366*86400000)))fail('Start date can only change before the event starts');
+              if(endsAt!==null&&(!integer(endsAt,Date.now()+1,Date.now()+5*366*86400000)||startsAt!==null&&endsAt<=startsAt))fail('Invalid end date');
+              await run('INSERT INTO event_metadata VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET data=excluded.data',e.id,JSON.stringify(meta));
+              await run('INSERT INTO event_options VALUES(?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET starts_at=excluded.starts_at,ends_at=excluded.ends_at',e.id,startsAt,endsAt,e.participantLimit);
+              await audit(user.id,'event-configured',e.id,b);return await event(e.id);
+            }
             const transitions = { draft: ['registration','active','canceled'], registration: ['active','canceled'], active: ['paused','completed','canceled'], paused: ['active','completed','canceled'], completed: ['archived'], canceled: ['archived'], archived: [] };
             if (!transitions[e.status].includes(b.status)) fail('Invalid event transition');
             for (const r of (await rooms()).filter(r => r.context === e.id && !r.settled)) {
@@ -294,6 +356,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
               else if (b.status === 'paused' && r.status === 'playing') { r.status = 'paused'; r.pausedByEvent = true; (await save(r)); }
               else if (b.status === 'active' && r.status === 'paused' && r.pausedByEvent) { r.status = 'playing'; r.pausedByEvent = false; r.state.deadline = Date.now() + (r.state.phase === 'challenge' ? 8000 : 30000); (await save(r)); }
             }
+            if(['completed','canceled'].includes(b.status))await run('INSERT INTO event_results VALUES(?,?) ON CONFLICT(event_id) DO NOTHING',e.id,JSON.stringify(await board(e.id)));
             (await run('UPDATE events SET status=? WHERE id=?', b.status, e.id)); (await audit(user.id, 'event-status', e.id, { before: e.status, after: b.status })); return (await event(e.id));
           }
           const um = /^\/api\/admin\/user\/([^/]+)$/.exec(path);
@@ -372,7 +435,13 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         if (r.status === 'playing' && Date.now() - r.started > 60 * 60000) {
           await cancel(r,'system','One-hour match limit reached; stakes refunded'); changed = true; continue;
         }
-        if (r.status !== 'playing' || r.state.deadline > Date.now()) continue;
+        if(r.status!=='playing')continue;
+        const now=Date.now(),actor=r.players.find(p=>p.id===r.state.turn);
+        try{
+          if(r.game==='bluff'&&r.state.phase==='challenge'&&now-(r.savedAt||0)>=1400&&r.botChallengeChecked!==r.state.moves){r.botChallengeChecked=r.state.moves;for(const p of r.players.filter(p=>(p.bot||p.left)&&p.id!==r.state.lastPlay.player)){const a=botAction(viewGame(r.state,p.id),Math.random,p.difficulty||'medium');if(a){r.state=actGame(r.state,p.id,a,now);break;}}await finish(r);await save(r);changed=true;continue;}
+          if(actor&&(actor.bot||actor.left)&&r.state.phase!=='challenge'&&now-(r.botMovedAt||r.savedAt||0)>=1400){const a=botAction(viewGame(r.state,actor.id),Math.random,actor.difficulty||'medium');if(a){r.state=actGame(r.state,actor.id,a,now);r.botMovedAt=now;await finish(r);await save(r);changed=true;continue;}}
+        }catch{await cancel(r,'system','Automated seat recovery');changed=true;continue;}
+        if(r.state.deadline>now)continue;
         // Engine errors refund the table; database errors roll the entire transaction back.
         try { r.state = tickGame(r.state,Date.now()); }
         catch { await cancel(r,'system','Rules engine recovery refund'); changed = true; continue; }

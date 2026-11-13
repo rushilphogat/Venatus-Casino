@@ -1592,3 +1592,145 @@ to {
 @keyframes poker-turn-over { from {transform:translateY(-10px) rotateY(180deg);} to {transform:translateY(0) rotateY(0);} }
 @media(max-width:600px) { .poker-board {gap:6px;} .poker-board .playing-card .center-suit {width:24px;} .poker-board .playing-card .corner {font-size:14px;} .poker-board .playing-card .corner svg {width:11px;height:11px;} .poker-showdown {padding:16px;} .poker-showdown-grid {grid-template-columns:repeat(auto-fit,minmax(150px,1fr));} }
 @media(prefers-reduced-motion:reduce) { .poker-flip.is-revealing .poker-flip-inner {animation:none;transform:none;} }
+/* Gameplay surfaces keep each game's working area legible and distinct. */
+.game-room { --table-accent:#dfc581; }
+.game-room .room-top {gap:16px;align-items:center;}
+.game-room .room-meta {flex-wrap:wrap;gap:10px;}
+.game-room .hand .playing-card {animation:none;}
+.hand-card {display:inline-flex;flex-shrink:0;border-radius:9px;}
+.hand-card[draggable="true"] {cursor:grab;}
+.hand-card:active {cursor:grabbing;}
+.hand-tools {display:flex;gap:7px;align-items:center;justify-content:center;flex-wrap:wrap;margin:0 auto 25px;}
+.hand-tools>span {font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-right:8px;}
+.hand-tools button,.bet-presets button {font-size:12px;padding:8px 12px;min-height:36px;}
+.game-actions button {min-height:44px;}
+.game-actions button[data-move="fold"],.game-actions button[data-move="drop"] {color:#e5a89b;}
+.game-actions button[data-move="call"],.game-actions button[data-move="check"],.game-actions button[data-move="play"],.game-actions button[data-move="discard"] {border-color:#c9b174;background:#c9b17422;}
+.bet-sizing {display:flex;align-items:end;gap:10px;flex-wrap:wrap;border-left:1px solid #ffffff20;padding-left:16px;}
+.bet-presets {display:flex;gap:5px;width:100%;}
+.bet-sizing label {max-width:150px;}
+.game-poker .felt {padding:28px 40px 32px;border:12px solid #30352d;border-radius:100px;background:radial-gradient(ellipse,#1e4943,#102e2d 80%);}
+.game-poker .poker-center {max-width:450px;}
+.game-poker .seat-count {font-size:12px;}
+.game-poker .seat-name {font-size:13px;max-width:145px;}
+.game-poker .poker-pot {margin-top:15px;}
+.game-poker .poker-board .playing-card .corner {font-size:22px;}
+.game-poker .poker-board .playing-card .center-suit {width:30px;}
+.game-ohhell .felt {border-radius:40px;background:radial-gradient(ellipse,#283e55,#152437);border-color:#263348;}
+.game-ohhell .seat {background:#101f31;}
+.trick-stage {display:flex;align-items:center;gap:32px;width:100%;justify-content:center;}
+.trump-tile {display:flex;flex-direction:column;gap:9px;align-items:center;padding-right:25px;border-right:1px solid #ffffff20;font-size:12px;}
+.trump-tile .playing-card {width:65px;height:94px;}
+.trump-tile .playing-card .center-suit {width:24px;}
+.trick-cards {min-width:240px;text-align:center;}
+.trick-cards .row {justify-content:center;gap:18px;}
+.trick-title {font-size:12px;letter-spacing:.04em;color:#c8d9e7;}
+.trick-play {display:flex;flex-direction:column;gap:8px;align-items:center;font-size:12px;}
+.trick-play .playing-card {width:75px;height:108px;}
+.trick-winner .playing-card {box-shadow:0 0 0 3px #e1c47d,0 10px 20px #0005;}
+.trick-empty {border:1px dashed #8ba9c34d;padding:28px;border-radius:15px;color:#d7e4ec;}
+.trick-empty small {display:block;margin-top:8px;color:#a2b7c7;}
+.bid-scoreboard {display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px;margin:18px 0 22px;}
+.bid-score {padding:14px 16px;border:1px solid #ffffff15;border-radius:12px;background:#14212b;}
+.bid-score strong {display:block;font-size:13px;overflow-wrap:anywhere;}
+.bid-score b {font-size:26px;font-variant-numeric:tabular-nums;}
+.bid-score span,.bid-score small {font-size:12px;color:#acbdcb;}
+.bid-score.on-target {border-bottom:3px solid #8dc3a2;}
+.game-rummy .felt {border-radius:35px;background:radial-gradient(ellipse,#3d4050,#262936);border-color:#373442;min-height:310px;}
+.game-rummy .seat {background:#232530;}
+.rummy-stage {display:flex;align-items:center;justify-content:center;gap:35px;}
+.rummy-deck {display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;}
+.rummy-deck small {color:#b6bdcb;}
+.pile-action {background:transparent;border:1px solid transparent;padding:12px;border-radius:16px;}
+.pile-action:not(:disabled):hover {background:#ffffff08;border-color:#d6b76c66;transform:translateY(-3px);}
+.pile-action .playing-card {pointer-events:none;}
+.pile-action:disabled {opacity:.75;}
+.rummy-objective {display:flex;gap:20px;align-items:center;padding:14px 18px;background:#b8b3d610;border:1px solid #b8b3d625;border-radius:12px;}
+.rummy-objective strong {white-space:nowrap;color:#ded4f1;}
+.rummy-objective span {font-size:12px;line-height:1.6;color:#b7b9c7;}
+.game-rummy .hand {gap:8px;}
+.game-bluff .felt {background:radial-gradient(ellipse,#563849,#2a1b2b);border-color:#382c38;border-radius:45px;}
+.game-bluff .seat {background:#2a1b29;}
+.game-chromatic .felt {background:radial-gradient(ellipse,#233d61,#162238);border-color:#29374f;border-radius:45px;}
+.game-chromatic .seat {background:#19283d;}
+.game-room .game-actions {position:sticky;bottom:0;z-index:4;background:#101914f5;border-top:1px solid #ffffff15;padding:15px;border-radius:16px 16px 0 0;backdrop-filter:blur(12px);}
+@media(max-width:720px) {
+ .game-room .felt,.game-poker .felt {margin:20px 0;padding:18px 12px;border-width:5px;border-radius:28px;min-height:270px;}
+ .game-room .seats {gap:6px;flex-wrap:wrap;}
+ .game-room .seat {min-width:60px;flex:1 1 25%;padding:7px;}
+ .game-room .seat-name {max-width:none;font-size:11px;}
+ .game-room .seat-count {font-size:10px;}
+ .game-room .table-center {margin-top:22px;}
+ .game-poker .poker-board .playing-card .corner {font-size:17px;}
+ .game-poker .poker-board .playing-card .center-suit {width:22px;}
+ .trick-stage {gap:12px;align-items:start;}
+ .trump-tile {padding-right:12px;}
+ .trick-cards {min-width:0;flex:1;}
+ .trick-cards .row {gap:10px;}
+ .trick-play .playing-card {width:56px;height:82px;}
+ .trick-play .playing-card .center-suit {width:22px;}
+ .rummy-stage {gap:8px;}
+ .rummy-deck .playing-card {width:64px;height:93px;}
+ .rummy-deck .playing-card .center-suit {width:25px;}
+ .rummy-objective {align-items:start;flex-direction:column;gap:6px;}
+ .game-room .game-actions {gap:8px;padding:10px 6px;}
+ .game-room .game-actions button {flex:1 1 auto;}
+ .bet-sizing {border:0;padding:0;width:100%;}
+ .bet-sizing label {flex:1;}
+ .hand-tools {gap:5px;}
+ .hand-tools>span {width:100%;text-align:center;}
+ .game-room .hand {padding-top:20px;}
+}
+.hand-card.group-start {margin-left:16px;box-shadow:-4px 0 0 #b7a4dc;}
+.hand-card.arrange-marked {outline:3px solid #d6b76c;transform:translateY(-12px);}
+.hand-card[role="button"] {cursor:pointer;}
+.hand-card[role="button"]:focus-visible {outline:3px solid #fff;outline-offset:4px;}
+.bluff-verdict {padding:18px 22px;background:#6f3c512b;border:1px solid #ba8b9e66;border-radius:16px;text-align:center;}
+.bluff-verdict strong {display:block;font-size:23px;color:#f0c7d7;}
+.game-bluff .reveal {border-color:#c38ca7;}
+.game-chromatic .playing-card.color-red {box-shadow:0 6px 0 #862a30,0 10px 16px #0004;}
+.game-chromatic .playing-card.color-blue {box-shadow:0 6px 0 #254575,0 10px 16px #0004;}
+.game-chromatic .playing-card.color-green {box-shadow:0 6px 0 #235d43,0 10px 16px #0004;}
+.game-chromatic .playing-card.color-yellow {box-shadow:0 6px 0 #876626,0 10px 16px #0004;}
+@media(prefers-reduced-motion:reduce){.hand-card.arrange-marked{transform:none;}}
+/* Keep the hand within reach on laptop displays. */
+.game-room {padding-top:18px;}
+.game-room .room-top {margin-bottom:10px;}
+.game-room .felt {min-height:230px;margin:16px 12px;padding:14px 24px;border-width:6px;}
+.game-room .table-center {margin-top:14px;min-height:100px;}
+.game-room .seat {padding:6px 10px;}
+.game-room .seat .avatar {width:24px;height:24px;margin-bottom:4px;}
+.game-room .turn-bar {margin:12px auto;padding:10px 16px;}
+.game-room .hand-label {margin:12px 0;}
+.game-room .hand-tools {margin:8px 0;}
+.game-room .hand .playing-card {animation:none;}
+.game-room .rummy-objective {margin:8px 0;padding:8px 12px;}
+.game-room .hand {padding-top:12px;}
+.game-room .game-actions {margin-top:10px;}
+.host-controls {justify-content:center;margin:12px 0;}
+@media(min-width:900px) and (max-height:850px){
+ .game-room .felt {min-height:205px;}
+ .game-room .seat .avatar {display:none;}
+ .game-room .rummy-deck .playing-card {height:82px;width:58px;}
+ .game-room .rummy-deck .playing-card .center-suit {width:24px;}
+ .game-room .rummy-deck .playing-card .corner {font-size:16px;}
+ .game-room .hand .playing-card {height:88px;width:60px;}
+ .game-room .poker-board {max-width:360px;margin:auto;}
+}
+@media(max-width:720px){
+ .game-room .room-meta {gap:8px;flex-wrap:wrap;}
+ .game-room .felt {padding:12px 8px;margin:12px 0;}
+ .game-room .hand {gap:4px;}
+ .game-room .hand .playing-card {width:52px;height:76px;}
+ .game-room .hand .playing-card .corner {font-size:15px;}
+ .game-room .hand .playing-card .center-suit {width:24px;}
+ .game-room .hand .playing-card .center-value {font-size:24px;}
+}
+@media(min-width:900px) and (max-height:850px){
+ .game-room .turn-bar {padding:7px 12px;margin:8px auto;max-width:none;}
+ .game-room .turn-bar p {display:inline;margin-left:12px;font-size:11px;}
+ .game-room .hand-label {margin:6px 0;}
+ .game-room .hand-tools {margin:4px 0;}
+ .game-room .hand-tools button {padding:6px 10px;min-height:30px;}
+ .game-room .rummy-objective {padding:5px 10px;margin:4px 0;font-size:11px;}
+}

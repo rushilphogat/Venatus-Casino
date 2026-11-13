@@ -17,3 +17,5 @@ PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE INDEX IF NOT EXISTS ledger_context ON ledger(context,at);
     CREATE INDEX IF NOT EXISTS rooms_status ON rooms(json_extract(data,'$.status'));
     CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS event_metadata(event_id TEXT PRIMARY KEY REFERENCES events(id),data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS event_results(event_id TEXT PRIMARY KEY REFERENCES events(id),data TEXT NOT NULL);

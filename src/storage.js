@@ -67,6 +67,7 @@ export async function openStorage({ dbPath = ':memory:', databaseUrl, pool: supp
     await tx(async () => {
       if (pool) await context.getStore().query(readFileSync(new URL('./schema-postgres.sql',import.meta.url),'utf8'));
       await run('INSERT INTO migrations VALUES(1,?) ON CONFLICT(version) DO NOTHING',Date.now());
+      await run('INSERT INTO migrations VALUES(2,?) ON CONFLICT(version) DO NOTHING',Date.now());
       await run('INSERT INTO settings VALUES(1,?) ON CONFLICT(id) DO NOTHING',JSON.stringify(initialSettings));
     });
   } catch (error) { if(pool) await pool.end(); else db.close(); throw error; }
