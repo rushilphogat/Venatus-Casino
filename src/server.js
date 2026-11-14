@@ -13,7 +13,8 @@ import { botAction } from './bots.js';
 const scrypt = promisify(scryptCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const digest = value => createHash('sha256').update(value).digest('hex');
-const publicUser = u => ({ id: u.id, name: u.name, role: u.role });
+const guestNickname = name => name.replace(/ #[0-9A-F]{6}$/, '');
+const publicUser = u => ({ id: u.id, name: u.role === 'guest' ? guestNickname(u.name) : u.name, role: u.role });
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const integer = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
 const text = (value, min = 1, max = 80) => typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
@@ -41,8 +42,17 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
   const initializeWallet = async (id, context, amount) => {
     if (!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', id, context))) (await money(id, context, amount, 0, 'allocation', context));
   };
-  const safeRoom = (r, user) => ({ id: r.id, name: r.name, game: r.game, context: r.context, stake: r.stake, status: r.status,
-    joinable: acceptsSeat(r), practice:!!r.practice, capacity:r.capacity||6, botDifficulty:r.botDifficulty||'medium', smallBlind:r.smallBlind, bigBlind:r.bigBlind, players: r.players, host: r.host, private: r.private, pot: r.stake * r.players.length, version: r.version, created: r.created, finished: r.finished, payout: r.payouts?.[user.id],
+  const connections = new Map();
+  function roomSeats(players) {
+    const names = players.map(p => guestNickname(p.name));
+    return players.map((p,i) => {
+      if (p.bot) return p;
+      const name = names.some((n,j) => i !== j && n.toLowerCase() === names[i].toLowerCase()) ? p.name : names[i];
+      return { ...p, name, online: connections.has(p.id) };
+    });
+  }
+  const safeRoom = (r, user) => ({ serverTime:Date.now(), id: r.id, name: r.name, game: r.game, context: r.context, stake: r.stake, status: r.status,
+    joinable: acceptsSeat(r), practice:!!r.practice, capacity:r.capacity||6, botDifficulty:r.botDifficulty||'medium', smallBlind:r.smallBlind, bigBlind:r.bigBlind, players: roomSeats(r.players), host: r.host, private: r.private, pot: r.stake * r.players.length, version: r.version, created: r.created, finished: r.finished, payout: r.payouts?.[user.id],
     code: r.players.some(p => p.id === user.id) ? r.code : undefined,
     state: r.state && r.players.some(p => p.id === user.id && !p.left) ? viewGame(r.state, user.id) : null });
   const betweenCasualHands = r => r.practice&&r.game==='poker'&&r.status==='playing'&&r.state?.phase==='between-hands';
@@ -144,6 +154,15 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     if(b.minStake!==undefined||b.maxStake!==undefined){meta.minStake=b.minStake??meta.minStake;meta.maxStake=b.maxStake??meta.maxStake;if(!integer(meta.minStake,0,100000)||!integer(meta.maxStake,meta.minStake,100000))fail('Invalid event stake range');}
     return meta;
   };
+  async function registerForEvent(userId, eventId) {
+    const e = await event(eventId);
+    if (!['registration', 'active'].includes(e.status)) fail('Registration is closed');
+    const member = await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', userId, e.id);
+    if (!member && e.registrationOpen === false) fail('Registration is closed');
+    if (!member && e.participantLimit && e.participants >= e.participantLimit) fail('This event has reached its participant limit');
+    await initializeWallet(userId, e.id, e.startingChips);
+    return wallet(userId, e.id);
+  }
   const canPlay = async (user, context, game, stake, isPrivate = false) => {
     const s = (await settings()); if (s.maintenance) fail('The casino is under maintenance');
     if (!['bluff', 'chromatic', 'poker', 'ohhell', 'rummy'].includes(game) || !s[game]) fail('This game is unavailable');
@@ -178,7 +197,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       if (path === '/health') return send({ status: 'ok' });
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail('Method not allowed', 405);
-        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/experience.js':'experience.js', '/style.css': 'style.css', '/logo.png': 'logo.png' };
+        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/experience.js':'experience.js', '/social.js':'social.js', '/style.css': 'style.css', '/social.css':'social.css', '/special-polish.css':'special-polish.css', '/logo.png': 'logo.png' };
         if (!files[path]) fail('Not found', 404);
         const content = readFileSync(resolve(ROOT, 'public', files[path]));
         res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' })[extname(files[path])], 'Cache-Control': 'no-cache' });
@@ -197,7 +216,25 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       // Reading a streamed body yields to other requests. Recheck revoked sessions and roles.
       if (req.method === 'POST') user = (await authenticate(req));
       if (user) rate(user.id + ':api', apiLimit, 60000);
+      if (path === '/api/guest' && req.method === 'POST') {
+        if (user) return send({ user: publicUser(user) });
+        rate(req.socket.remoteAddress + ':guest', 120, 15 * 60000);
+        if ((await settings()).maintenance) fail('The casino is under maintenance');
+        const nickname = typeof b.name === 'string' ? b.name.trim() : '';
+        if ((b.name !== undefined && typeof b.name !== 'string') || !/^[\p{L}\p{N} _-]{0,16}$/u.test(nickname)) fail('Choose a nickname up to 16 letters, numbers, spaces, _ or -');
+        // The tag distinguishes guests with the same nickname and cannot collide with a member name.
+        const guest = { id: randomUUID(), role: 'guest' };
+        await tx(async () => {
+          do {
+            guest.name = (nickname || 'Guest') + ' #' + randomBytes(3).toString('hex').toUpperCase();
+          } while (await get('SELECT id FROM users WHERE name=?', guest.name));
+          await run('INSERT INTO users VALUES(?,?,?,?,0,?)', guest.id, guest.name, '', guest.role, Date.now());
+          await loginSession(res, guest);
+        });
+        return send({ user: publicUser(guest) });
+      }
       if (['/api/register', '/api/login', '/api/setup'].includes(path) && req.method === 'POST') {
+        const upgradingGuest = path === '/api/register' && user?.role === 'guest' ? user.id : null;
         rate(req.socket.remoteAddress + ':auth', 300, 15 * 60000);
         if (!text(b.name, 3, 24) || !/^[\p{L}\p{N} _-]+$/u.test(b.name.trim())) fail('Use a 3–24 character name with letters, numbers, spaces, _ or -');
         if (typeof b.password !== 'string' || b.password.length < 12 || b.password.length > 128) fail('Use a password with 12–128 characters');
@@ -216,13 +253,33 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           account = (await tx(async () => {
             if ((await get('SELECT id FROM users WHERE name=?', name))) fail('That name is already in use', 409);
             if (path === '/api/setup' && (await get("SELECT id FROM users WHERE role='superadmin'"))) fail('Owner has already been configured', 409);
+            const guest = path === '/api/register' && await authenticate(req);
+            if (upgradingGuest && (guest?.id !== upgradingGuest || guest.role !== 'guest')) fail('Guest account changed. Refresh to continue.',409);
+            if (guest && guest.role === 'guest') {
+              await run("UPDATE users SET name=?,password=?,role='player' WHERE id=?", name, `${salt}:${hash}`, guest.id);
+              for (const r of await rooms()) {
+                const seat = r.players.find(p => p.id === guest.id);
+                if (seat && (!r.settled || (r.practice && r.status === 'finished'))) {
+                  seat.name = name;
+                  await save(r);
+                }
+              }
+              await run('DELETE FROM sessions WHERE user_id=?',guest.id);
+              await audit(guest.id,'account-created',guest.id,{ fromGuest:true });
+              const converted = await get('SELECT * FROM users WHERE id=?', guest.id);
+              await loginSession(res, converted);
+              return converted;
+            }
             const id = randomUUID(); const role = path === '/api/setup' ? 'superadmin' : 'player';
             (await run('INSERT INTO users VALUES(?,?,?,?,0,?)', id, name, `${salt}:${hash}`, role, Date.now()));
             (await audit(id, 'account-created', id, { role }));
-            return (await get('SELECT * FROM users WHERE id=?', id));
+            const created = await get('SELECT * FROM users WHERE id=?', id);
+            await loginSession(res, created);
+            return created;
           }));
         }
-        (await loginSession(res, account)); (await broadcast()); return send({ user: publicUser(account) });
+        if (path === '/api/login') await loginSession(res, account);
+        (await broadcast()); return send({ user: publicUser(account) });
       }
       if (!user) fail('Sign in to continue', 401);
       if (path === '/api/logout' && req.method === 'POST') {
@@ -261,7 +318,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         if (!user) fail('Sign in to continue',401);
         (await scheduledEvents());
         const joinEvent = /^\/api\/events\/([^/]+)\/join$/.exec(path);
-        if (joinEvent) { const e = (await event(joinEvent[1])); if (!['registration','active'].includes(e.status))fail('Registration is closed');if(e.registrationOpen===false&&!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?',user.id,e.id)))fail('Registration is closed'); if(!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?',user.id,e.id)) && e.participantLimit && e.participants>=e.participantLimit)fail('This event has reached its participant limit'); (await initializeWallet(user.id, e.id, e.startingChips)); return { wallet: (await wallet(user.id, e.id)) }; }
+        if (joinEvent) return { wallet: await registerForEvent(user.id, joinEvent[1]) };
         if (path === '/api/tables') {
           if(b.stake!==undefined&&!integer(b.stake,0,100000))fail('Invalid stake');
           if(b.bots!==undefined&&!integer(b.bots,0,5))fail('Choose zero to five bots');
@@ -279,7 +336,18 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           const r = { id: randomUUID(), name: b.name.trim(), context, game: b.game, stake: b.stake, practice:b.practice, capacity:b.capacity||6, botDifficulty:b.botDifficulty||'medium',smallBlind:b.smallBlind,bigBlind:b.bigBlind, private: !!b.private, code: randomBytes(6).toString('hex').toUpperCase(), host: user.id, players: [], state: null, status: 'waiting', settled: false, created: Date.now(), version: 0 };
           await joinTable(r,user,r.code);for(let i=0;i<(b.bots||0);i++)r.players.push({id:'bot-'+randomUUID(),name:'Bot '+(i+1),bot:true,difficulty:r.botDifficulty});await save(r);return safeRoom(r,user);
         }
-        if (path === '/api/rooms/join') { const r = (await rooms()).find(r => r.code === String(b.code).trim().toUpperCase() && (!r.settled||r.practice&&r.status==='finished')); if (!r) fail('Room not found', 404); return (await joinTable(r, user, r.code)); }
+        if (path === '/api/rooms/join') {
+          const r = (await rooms()).find(r => r.code === String(b.code).trim().toUpperCase() && (!r.settled || r.practice && r.status==='finished'));
+          if (!r) fail('Room not found',404);
+          if (r.context !== 'casual' && !(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, r.context))) {
+            if (b.registerForEvent === true) await registerForEvent(user.id, r.context);
+            else if (b.previewEvent === true) {
+              const e = await event(r.context);
+              return { registration: { name:e.name, startingChips:e.startingChips, stake:r.stake } };
+            }
+          }
+          return joinTable(r, user, r.code);
+        }
         if (tableMatch) {
           const r = (await room(tableMatch[1])); const op = tableMatch[2];
           if (op === 'join') return (await joinTable(r, user, b.code));
@@ -363,7 +431,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           if (um) {
             const target = (await get('SELECT * FROM users WHERE id=?', um[1])); if (!target) fail('Player not found', 404);
             if (target.role === 'superadmin') fail('Owner account cannot be modified here');
-            if (b.role !== undefined) { requireOwner(user); if (!['player','moderator'].includes(b.role)) fail('Invalid role'); (await run('UPDATE users SET role=? WHERE id=?', b.role, target.id)); }
+            if (b.role !== undefined) { requireOwner(user); if (target.role==='guest' || !['player','moderator'].includes(b.role)) fail('Only registered players can change role'); (await run('UPDATE users SET role=? WHERE id=?', b.role, target.id)); }
             if (b.banned !== undefined) {
               if (typeof b.banned !== 'boolean') fail('Invalid ban value');
               if (target.role === 'moderator') requireOwner(user);
@@ -414,9 +482,25 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     try {
     const user = (await authenticate(req));
     if (req.url !== '/ws' || !user || !allowedOrigin(req) || wss.clients.size > 1000) { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return socket.destroy(); }
-    wss.handleUpgrade(req, socket, head, ws => { ws.userId = user.id; ws.request = req; ws.alive = true; ws.on('pong', () => { ws.alive = true; }); ws.on('error', () => {}); ws.send(JSON.stringify({ type: 'refresh' })); });
+    wss.handleUpgrade(req, socket, head, ws => {
+      ws.userId = user.id; ws.request = req; ws.alive = true;
+      ws.on('pong', () => { ws.alive = true; });
+      ws.on('error', () => {});
+      const count = connections.get(user.id) || 0;
+      connections.set(user.id, count + 1);
+      if (count === 0) notifyPresence();
+      else ws.send(JSON.stringify({ type: 'refresh' }));
+      ws.once('close', () => {
+        const remaining = connections.get(user.id) - 1;
+        if (remaining) connections.set(user.id, remaining);
+        else { connections.delete(user.id); notifyPresence(); }
+      });
+    });
     } catch { socket.destroy(); }
   });
+  function notifyPresence() {
+    for (const ws of wss.clients) if (ws.readyState === 1) ws.send('{"type":"refresh"}');
+  }
   async function broadcast() {
     try { for (const client of wss.clients) { if (!(await authenticate(client.request))) client.close(1008, 'Session expired'); else if (client.readyState === 1) client.send(JSON.stringify({ type: 'refresh' })); } }
     catch { for (const client of wss.clients) client.terminate(); }

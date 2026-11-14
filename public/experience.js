@@ -23,7 +23,7 @@ export function handleExperienceAction(button, room, selected, render) {
   if (!room?.state) return false;
   if (button.dataset.action === 'bet-preset') {
     const input = document.querySelector('#bet-amount');
-    if (input) { input.value = Math.max(Number(input.min),Math.min(Number(input.max),Number(button.dataset.amount))); input.focus(); }
+    if (input) { input.value = Math.max(Number(input.min),Math.min(Number(input.max),Number(button.dataset.amount))); input.dispatchEvent(new Event('input',{bubbles:true})); input.focus(); }
     return true;
   }
   if (!['hand-sort','hand-move','hand-arrange','hand-mark','hand-group'].includes(button.dataset.action)) return false;

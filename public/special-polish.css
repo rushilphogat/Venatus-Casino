@@ -1,0 +1,78 @@
+/* Playing positions are fixed around the viewer while stacks and blinds rotate. */
+.game-poker .felt {isolation:isolate;}
+.game-poker .seat, .game-ohhell .seat, .game-rummy .seat {position:relative; min-width:0;}
+.game-poker .seat {border-radius:12px;background:#112d2a;color:#f3e9cd;}
+.seat-marks {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:5px;}
+.seat-marks:not(:empty) {margin-top:3px;}
+.dealer-mark {display:inline-grid;place-items:center;min-width:1.5em;padding:1px 3px;border-radius:99px;background:#e8dbba;color:#1c2922;font:700 10px/1.4 system-ui;}
+.seat-wager {font-size:11px;font-variant-numeric:tabular-nums;color:#efcf85;display:inline-flex;align-items:center;gap:5px;}
+.seat-wager i,.flight-chips {border-radius:50%;border:2px dashed #f5d9a0;background:#af5a49;box-shadow:0 2px #5b3837,0 3px #efbb7f;}
+.seat-wager i {width:11px;height:8px;}
+.seat-folded {opacity:.66;}
+.seat-marks small {font-size:10px;}
+.table-flight {position:absolute;z-index:8;pointer-events:none;will-change:transform,opacity;}
+.flight-chips {width:22px;height:15px;}
+.flight-card {width:23px;height:33px;border:2px solid #ece0bf;border-radius:3px;background:repeating-linear-gradient(48deg,#6c3739 0 2px,#955856 2px 3px,#6c3739 3px 6px);box-shadow:0 3px 7px #060d0e55;}
+.pot-receipt {display:flex;align-items:baseline;justify-content:center;flex-wrap:wrap;gap:7px 16px;margin:10px auto;color:#c1c7b9;font-size:13px;}
+.pot-receipt strong {color:#f3d897;}
+.pot-receipt>div {display:flex;flex-wrap:wrap;justify-content:center;gap:10px;}
+.game-poker .game-actions [data-move="fold"] {color:#ffbab0;}
+.game-poker .game-actions [data-move="raise"],.game-poker .game-actions [data-move="call"],.game-poker .game-actions [data-move="check"] {background:#e5c98c;color:#1c281e;border-color:#e5c98c;}
+.game-poker .game-actions [data-move="request-cashout"] {font-size:12px;color:#b8c9bc;background:transparent;}
+.bid-pad {display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.bid-pad strong {font-size:13px;color:#c0d4e6;margin-right:6px;}
+.game-ohhell .bid-pad button {font:600 17px/1.1 system-ui;min-width:42px;min-height:42px;flex:0 0 auto;background:#26384a;border-color:#516e82;color:#f3f7ff;}
+.round-ledger {margin:8px auto 14px;color:#d0dbe6;font-size:13px;}
+.round-ledger summary {cursor:pointer;padding:7px 0;}
+.ledger-scroll {overflow-x:auto;}
+.round-ledger table {width:100%;border-collapse:collapse;}
+.round-ledger td,.round-ledger th {text-align:left;padding:6px;border-bottom:1px solid #8399ae38;}
+.round-ledger small {color:#9ed1ab;}
+.meld-review {padding:12px;border:1px solid #82778e66;border-radius:12px;background:#28282f;font-size:13px;}
+.meld-review>div:first-child {display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.meld-strip {display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;}
+.meld-strip>div {background:#ffffff08;border-left:2px solid #b9a5d9;padding:4px 8px;}
+.meld-strip small,.meld-strip span {display:block;}
+.meld-strip small {color:#cfbce3;margin-bottom:3px;}
+.discard-space {display:block;width:56px;height:80px;border:1px dashed #aaa0b9;border-radius:6px;}
+.game-rummy .pile-action:not(:disabled) {border:1px solid #c9b0ec77;box-shadow:inset 0 -2px #b29acf77;}
+.game-rummy .rummy-deck:disabled {cursor:default;}
+.game-rummy .game-actions [data-move="declare"]:enabled {background:#c4b1df;color:#21192f;}
+.game-rummy .game-actions [data-move="drop"] {color:#c9afaa;}
+@media(min-width:760px) {
+  .game-poker .felt {display:grid;place-items:center;min-height:335px;max-width:1000px;margin:14px auto;border-radius:40% / 64%;padding:20px;}
+  .game-poker .felt .seats {display:contents;}
+  .game-poker .felt .seat {position:absolute;z-index:2;left:var(--seat-x);top:var(--seat-y);transform:translate(-50%,-50%);width:clamp(85px,12vw,140px);padding:6px 9px;}
+  .game-poker .felt .table-center {margin:0;width:57%;}
+  .game-poker .felt .poker-center {width:100%;max-width:370px;}
+  .game-poker .felt .poker-pot {margin-top:6px;gap:1px;}
+  .game-poker .felt .poker-pot strong {font-size:25px;}
+}
+@media(max-width:759px) {
+  .game-poker .felt .seats,.game-ohhell .felt .seats,.game-rummy .felt .seats {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(27%,100px),1fr));}
+  .game-rummy .rummy-stage {max-width:100%;}
+  .game-rummy .rummy-deck {min-width:0;}
+  .game-poker .seat-name,.game-rummy .seat-name,.game-ohhell .seat-name {max-width:100%;}
+  .game-ohhell .trick-cards .row {gap:5px;}
+  .game-ohhell .trick-play {max-width:65px;}
+  .game-ohhell .trick-play>span {max-width:100%;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}
+}
+@media(prefers-reduced-motion:reduce) {.table-flight {display:none;}}
+.bet-sizing .bet-slide {min-width:105px;flex:1 1 110px;max-width:215px;}
+.bet-slide input[type="range"] {accent-color:#e1c488;width:100%;padding:0;cursor:pointer;}
+/* The action panel participates in layout so it cannot cover a player's cards. */
+.game-room .game-actions {position:relative;bottom:auto;backdrop-filter:none;}
+@media(min-width:760px) {
+  .game-poker .felt {min-height:285px;margin:32px auto;}
+  .game-room .turn-bar {padding:7px 12px;margin:8px auto;}
+  .game-room .turn-bar p {margin:4px 0;font-size:12px;}
+  .game-room .hand-label {margin:6px 0;}
+  .game-room .game-actions {padding:10px;margin:8px 0;}
+}
+@media(max-width:759px) {
+  .game-rummy .hand {flex-wrap:nowrap;overflow-x:auto;justify-content:safe center;scrollbar-width:thin;overscroll-behavior-x:contain;}
+  .game-rummy .hand-card {flex:none;}
+  .game-rummy .hand-tools {flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;padding:4px 0;}
+  .game-rummy .hand-tools>span {display:none;}
+  .game-rummy .hand-tools button {flex:none;}
+}

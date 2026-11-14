@@ -12,6 +12,130 @@ import { postgresStorage } from './postgres-fixture.js';
 
 const password = 'Venatus-test-password-42';
 
+async function guestAccount(f, name) {
+  const result = await f.request('/api/guest', { body: name === undefined ? {} : { name } });
+  assert.equal(result.status, 200);
+  assert.ok(result.cookie);
+  assert.equal(result.body.user.role, 'guest');
+  assert.equal(result.body.user.password, undefined);
+  return { ...result.body.user, cookie: result.cookie };
+}
+
+test('guest entry keeps a browser identity and private table permissions without credentials', async t => {
+  const f = await fixture(t, false);
+  const blank = await guestAccount(f);
+  assert.equal(blank.name, 'Guest');
+  for (const name of ['<script>', 'A'.repeat(17), 123, null]) {
+    assert.equal((await f.request('/api/guest', { body: { name } })).status, 400);
+  }
+  const first = await guestAccount(f, 'Friends');
+  const second = await guestAccount(f, 'Friends');
+  assert.notEqual(first.id, second.id);
+  const retry = await f.request('/api/guest', { cookie: first.cookie, body: { name: 'New name', role: 'superadmin' } });
+  assert.equal(retry.body.user.id, first.id);
+  assert.equal(retry.body.user.name, first.name);
+  assert.equal(retry.cookie, undefined);
+  assert.equal((await f.request('/api/admin', { cookie: first.cookie })).status, 403);
+  assert.equal((await f.request('/api/admin/event', { cookie: first.cookie, body: {} })).status, 403);
+  assert.equal((await f.request(`/api/admin/user/${first.id}`, { cookie: f.owner.cookie, body: { role: 'moderator' } })).status, 400);
+  let room = await f.ok('/api/tables', first.cookie, { name: 'Guest friends', game: 'poker', stake: 500, private: true });
+  assert.equal((await f.request(`/api/tables/${room.id}`, { cookie: second.cookie })).status, 403);
+  assert.equal((await f.request(`/api/tables/${room.id}/join`, { cookie: second.cookie, body: {} })).status, 403);
+  assert.equal((await f.ok('/api/lobby', second.cookie)).tables.length, 0);
+  room = await f.ok('/api/rooms/join', second.cookie, { code: room.code });
+  assert.equal(room.players.length, 2);
+  assert.notEqual(room.players[0].name, room.players[1].name, 'Duplicate nicknames are distinct at a table');
+  room = await f.ok(`/api/tables/${room.id}/start`, first.cookie, {});
+  assert.equal(room.state.hand.length, 2);
+  assert.equal(room.state.hands, undefined);
+  await f.restart();
+  const me = await f.ok('/api/me', first.cookie);
+  assert.equal(me.user.id, first.id);
+  assert.deepEqual(me.activeTable, { id: room.id, context: 'casual' });
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets').get()).n, 0);
+  await f.ok(`/api/admin/user/${first.id}`, f.owner.cookie, { banned: true });
+  assert.equal((await f.ok('/api/me', first.cookie)).user, null);
+  assert.equal((await f.request('/api/lobby', { cookie: first.cookie })).status, 401);
+});
+
+test('saving a guest account preserves event chips and seats while replacing the session', async t => {
+  const f = await fixture(t, false);
+  const guest = await guestAccount(f, 'Temporary');
+  const e = await f.ok('/api/admin/event', f.owner.cookie, { name: 'Guest night', startingChips: 1000, stakes: [100], games: ['poker'] });
+  await f.ok(`/api/admin/event/${e.id}`, f.owner.cookie, { status: 'active' });
+  await f.ok(`/api/events/${e.id}/join`, guest.cookie, {});
+  const room = await f.ok('/api/tables', guest.cookie, { name: 'Saved seat', context: e.id, game: 'poker', stake: 100 });
+  const before = (await f.ok(`/api/lobby?context=${e.id}`, guest.cookie)).wallet;
+  assert.deepEqual(before, { available: 900, reserved: 100 });
+  const occupied = await f.account('Existing Member');
+  const rejected = await f.request('/api/register', { cookie: guest.cookie, body: { name: occupied.name, password } });
+  assert.equal(rejected.status, 409);
+  assert.equal((await f.ok('/api/me', guest.cookie)).user.role, 'guest');
+  const saved = await f.request('/api/register', { cookie: guest.cookie, body: { name: 'Saved Member', password, role: 'superadmin' } });
+  assert.equal(saved.status, 200);
+  assert.ok(saved.cookie);
+  assert.notEqual(saved.cookie, guest.cookie);
+  assert.equal(saved.body.user.id, guest.id);
+  assert.equal(saved.body.user.role, 'player');
+  assert.equal((await f.ok('/api/me', guest.cookie)).user, null);
+  assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`, saved.cookie)).wallet, before);
+  const returned = await f.ok(`/api/tables/${room.id}`, saved.cookie);
+  assert.equal(returned.host, guest.id);
+  assert.equal(returned.players[0].name, 'Saved Member');
+  const login = await f.request('/api/login', { body: { name: 'Saved Member', password } });
+  assert.equal(login.status, 200);
+  assert.equal(login.body.user.id, guest.id);
+  await f.ok(`/api/events/${e.id}/join`, login.cookie, {});
+  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE user_id=? AND context=? AND reason='allocation'").get(guest.id, e.id)).n, 1);
+  assert.equal((await f.ok('/api/guest', saved.cookie, {})).user.id, guest.id);
+});
+
+test('guest event invitations preview allocation and register only on explicit admission', async t => {
+  const f = await fixture(t, false);
+  const host = await guestAccount(f, 'Host');
+  const friend = await guestAccount(f, 'Friend');
+  const late = await guestAccount(f, 'Late');
+  const e = await f.ok('/api/admin/event', f.owner.cookie, { name: 'Invitation event', startingChips: 1000, stakes: [100], games: ['poker'], participantLimit: 2 });
+  await f.ok(`/api/admin/event/${e.id}`, f.owner.cookie, { status: 'active' });
+  await f.ok(`/api/events/${e.id}/join`, host.cookie, {});
+  const room = await f.ok('/api/tables', host.cookie, { name: 'Invited table', context: e.id, game: 'poker', stake: 100, private: true, capacity: 2 });
+  const preview = await f.ok('/api/rooms/join', friend.cookie, { code: room.code, previewEvent: true });
+  assert.deepEqual(preview.registration, { name: e.name, startingChips: 1000, stake: 100 });
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE user_id=?').get(friend.id)).n, 0);
+  await f.ok(`/api/admin/event/${e.id}`, f.owner.cookie, { operation: 'configure', registrationOpen: false });
+  assert.equal((await f.request('/api/rooms/join', { cookie: friend.cookie, body: { code: room.code, registerForEvent: true } })).status, 400);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE user_id=?').get(friend.id)).n, 0);
+  await f.ok(`/api/admin/event/${e.id}`, f.owner.cookie, { operation: 'configure', registrationOpen: true });
+  const joined = await f.ok('/api/rooms/join', friend.cookie, { code: room.code, registerForEvent: true });
+  assert.equal(joined.id, room.id);
+  assert.deepEqual((await f.ok(`/api/lobby?context=${e.id}`, friend.cookie)).wallet, { available: 900, reserved: 100 });
+  await f.ok('/api/rooms/join', friend.cookie, { code: room.code, registerForEvent: true });
+  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE user_id=? AND reason='allocation'").get(friend.id)).n, 1);
+  assert.equal((await f.request('/api/rooms/join', { cookie: late.cookie, body: { code: room.code, registerForEvent: true } })).status, 400);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE user_id=?').get(late.id)).n, 0);
+  await f.db.prepare('UPDATE event_options SET participant_limit=? WHERE event_id=?').run(3, e.id);
+  const full = await f.request('/api/rooms/join', { cookie: late.cookie, body: { code: room.code, registerForEvent: true } });
+  assert.equal(full.status, 400);
+  assert.match(full.body.error, /not accepting players/);
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets WHERE user_id=?').get(late.id)).n, 0, 'Failed seat admission rolls back registration');
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM ledger WHERE user_id=?').get(late.id)).n, 0);
+});
+
+test('concurrent guest saves cannot create a second account or abandon the original seat', async t => {
+  const f = await fixture(t, false);
+  const guest = await guestAccount(f, 'Concurrent');
+  const room = await f.ok('/api/tables', guest.cookie, { name: 'Keep my seat', game: 'poker', stake: 100 });
+  const results = await Promise.all(['Saved first', 'Saved second'].map(name =>
+    f.request('/api/register', { cookie: guest.cookie, body: { name, password } })
+  ));
+  const successful = results.filter(r => r.status === 200);
+  assert.equal(successful.length, 1);
+  assert.equal(successful[0].body.user.id, guest.id);
+  assert.ok(results.some(r => [401, 409].includes(r.status)));
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM users').get()).n, 2);
+  assert.deepEqual((await f.ok('/api/me', successful[0].cookie)).activeTable, { id: room.id, context: 'casual' });
+});
+
 test('scheduled events enforce participant limits, start and end with exactly-once refunds',async t=>{
   const f=await fixture(t),a=await f.account('Scheduled Alice'),b=await f.account('Scheduled Bob'),c=await f.account('Scheduled Cara');
   const settings={name:'Scheduled club',startingChips:1000,stakes:[100],games:['poker'],participantLimit:2,startsAt:Date.now()+60000,endsAt:Date.now()+120000};

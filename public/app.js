@@ -1,8 +1,9 @@
 import { handTools, renderHand, handleExperienceAction, installHandDrag } from '/experience.js';
-import { specialRoom } from '/special.js';
+import { specialRoom, animateSpecialTransition, specialTransitionSound, installSpecialInput } from '/special.js';
+import { socialRoom, socialTransition, animateSocialTransition, updateSocialSelection } from '/social.js';
 const app = document.querySelector('#app');
 const modal = document.querySelector('#modal');
-const state = { user: null, setupRequired: false, context: 'casual', page: 'lobby', roomId: null, room: null, lobby: null, admin: null, selected: new Set(), connected: false, authMode: 'login', busy: false };
+const state = { user: null, setupRequired: false, context: 'casual', page: 'lobby', roomId: null, room: null, lobby: null, admin: null, selected: new Set(), connected: false, authMode: 'guest', busy: false };
 let pendingInvite = new URLSearchParams(location.search).get('join') || '';
 if (!/^[A-F0-9]{12}$/i.test(pendingInvite)) pendingInvite = '';
 let audioPrefs = { muted: false, volume: .3 };
@@ -15,10 +16,15 @@ const adminRole = () => ['superadmin', 'moderator', 'admin'].includes(state.user
 const initials = name => String(name || '?').slice(0, 2).toUpperCase();
 let socket, refreshTimeout, toastTimeout, audioContext, reconnectTimeout;
 let reconnectAttempts = 0;
+let claimRank = 'A';
+let serverClockOffset = 0;
+let savingAccount = false;
 
 async function api(path, body) {
+  const sentAt = Date.now();
   const response = await fetch(path, { credentials: 'same-origin', headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => ({}));
+  if(Number.isFinite(data.serverTime))serverClockOffset=data.serverTime-(sentAt+Date.now())/2;
   if (!response.ok) {
     if (response.status === 401 && state.user) { state.user = null; socket?.close(); renderAuth(); }
     throw new Error(data.error || `Request failed (${response.status})`);
@@ -34,14 +40,31 @@ function sound(kind = 'tap') {
   if (audioPrefs.muted) return;
   try {
     audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-    audioContext.resume().catch(() => {});
-    const frequencies = kind === 'win' ? [523, 659, 784] : kind === 'error' ? [180, 140] : kind === 'turn' ? [440, 660] : kind === 'deal' ? [750, 550] : [480];
-    frequencies.forEach((frequency, index) => {
-      const osc = audioContext.createOscillator(); const gain = audioContext.createGain(); const start = audioContext.currentTime + index * .075;
-      osc.type = 'sine'; osc.frequency.value = frequency; gain.gain.setValueAtTime(0, start); gain.gain.linearRampToValueAtTime(Math.min(.15, Number(audioPrefs.volume) * .15), start + .006); gain.gain.exponentialRampToValueAtTime(.001, start + .13);
-      osc.connect(gain); gain.connect(audioContext.destination); osc.start(start); osc.stop(start + .14);
+    if (audioContext.state !== 'running') {
+      if (!navigator.userActivation?.hasBeenActive) return;
+      audioContext.resume().catch(() => {});
+    }
+    const volume = Math.max(0,Math.min(1,Number(audioPrefs.volume)||0));
+    const notes = {win:[523,659,784],error:[180,140],turn:[440,660],exposed:[220,440,660],honest:[330,220],reverse:[350,600,350],skip:[540,350],stack:[220,330,440],wild:[440,554,659],collect:[520,680]};
+    const start = audioContext.currentTime;
+    if (['deal','draw','place','chips'].includes(kind)) {
+      const length = Math.floor(audioContext.sampleRate*.07);
+      const buffer = audioContext.createBuffer(1,length,audioContext.sampleRate);
+      const data=buffer.getChannelData(0);
+      for(let i=0;i<length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/length,2);
+      const noise=audioContext.createBufferSource(), filter=audioContext.createBiquadFilter(), gain=audioContext.createGain();
+      noise.buffer=buffer;filter.type='bandpass';filter.frequency.value=kind==='chips'?2600:1100;
+      gain.gain.value=volume*.32;
+      noise.connect(filter);filter.connect(gain);gain.connect(audioContext.destination);noise.start();
+      return;
+    }
+    (notes[kind] || [480]).forEach((frequency,index) => {
+      const osc=audioContext.createOscillator(), gain=audioContext.createGain(), at=start+index*.07;
+      osc.type='sine';osc.frequency.value=frequency;
+      gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(volume*.11,at+.006);gain.gain.exponentialRampToValueAtTime(.001,at+.12);
+      osc.connect(gain);gain.connect(audioContext.destination);osc.start(at);osc.stop(at+.13);
     });
-  } catch { /* Sound must never interrupt play. */ }
+  } catch { /* Audio availability never blocks a game action. */ }
 }
 const paths = {
   S: 'M20 2C15 10 3 15 3 24a10 10 0 0 0 17 7c-1 5-3 8-7 11h14c-4-3-6-6-7-11a10 10 0 0 0 17-7C37 15 25 10 20 2Z',
@@ -70,14 +93,19 @@ function card(c, interactive = false, disabled = false) {
 }
 function brand() { return '<div class="brand"><img src="/logo.png" alt="Venatus logo"><div><strong>VENATUS</strong><span>CASINO</span></div></div>'; }
 function header() {
-  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Play games</button><button data-action="events">Casino events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Your activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><div class="avatar">${esc(initials(state.user.name))}</div><span class="account-name small">${esc(state.user.name)}</span><button class="subtle" data-action="logout">Sign out</button></div>` : '<span class="badge">The private card room</span>'}</header>`;
+  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Play games</button><button data-action="events">Casino events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Your activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><div class="avatar">${esc(initials(state.user.name))}</div><span class="account-name small">${esc(state.user.name)}</span>${state.user.role==='guest'?'<button class="subtle" data-action="save-guest">Save account</button>':''}<button class="subtle" data-action="logout">${state.user.role==='guest'?'Exit guest':'Sign out'}</button></div>` : '<span class="badge">The private card room</span>'}</header>`;
 }
 function footer() {
   return `<footer class="footer"><span>VENATUS CASINO &nbsp; · &nbsp; Play for the pleasure of the game.</span><span>Free virtual chips. No purchases, transfers or cash value.</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${audioPrefs.muted ? 'Unmute' : 'Mute'} sound">Sound ${audioPrefs.muted ? 'off' : 'on'}</button><input id="sound-volume" type="range" min="0" max="1" step="0.05" value="${audioPrefs.volume}" aria-label="Sound volume"></div>` : ''}</footer>`;
 }
 function renderAuth() {
   const mode = state.authMode;
-  app.innerHTML = `${header()}<main class="auth-layout"><section class="auth-story"><div class="eyebrow">Good company. A little intrigue.</div><h1>A seat at<br>something <em class="gold">special.</em></h1><p>Leave the everyday at the door. Read the room, play your hand, and make the evening yours.</p><div class="mini-cards" aria-hidden="true">${card({ rank: 'A', suit: 'S' })}${card({ rank: 'K', suit: 'H' })}${card(null)}</div><p class="small">Real players. Shared tables. Always free to play.</p></section><section class="auth-card"><div class="auth-tabs"><button data-action="auth-mode" data-mode="login" class="${mode === 'login' ? 'active' : ''}">Welcome back</button><button data-action="auth-mode" data-mode="register" class="${mode === 'register' ? 'active' : ''}">Become a member</button></div><h2>${mode === 'setup' ? 'Your casino, your control.' : mode === 'register' ? 'Your evening starts here.' : 'The table is waiting.'}</h2><p class="small">${mode === 'setup' ? 'Use the private setup token from your server configuration.' : mode === 'register' ? 'Create your player account.' : 'Sign in to take your seat.'}</p><form id="auth-form" class="stack"><label>Player name<input name="name" autocomplete="username" minlength="3" maxlength="24" required placeholder="Your player name"></label><label>Password<input name="password" type="password" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}" minlength="${mode === 'login' ? 1 : 12}" maxlength="128" required placeholder="${mode === 'login' ? 'Your password' : 'At least 12 characters'}"></label>${mode === 'setup' ? '<label>Owner setup token<input name="token" type="password" required autocomplete="off"></label>' : ''}<p class="form-error" role="alert"></p><button class="primary" type="submit">${mode === 'setup' ? 'Create owner account' : mode === 'register' ? 'Enter the casino' : 'Sign in'} &nbsp; →</button></form><p class="form-foot">A free virtual-chip card room. No real-money wagering.</p>${state.setupRequired ? `<button class="subtle small" data-action="auth-mode" data-mode="${mode === 'setup' ? 'login' : 'setup'}">${mode === 'setup' ? 'Back to player sign in' : 'Owner setup'}</button>` : ''}</section></main>`;
+  const guest = mode === 'guest';
+  const invite = Boolean(pendingInvite);
+  const guestForm = `<label>Nickname <small>(optional)</small><input name="name" autocomplete="nickname" maxlength="16" placeholder="What should friends call you?"></label>`;
+  const credentials = `<label>Player name<input name="name" autocomplete="username" minlength="3" maxlength="24" required></label><label>Password<input name="password" type="password" autocomplete="${mode==='login'?'current-password':'new-password'}" minlength="${mode==='login'?1:12}" maxlength="128" required></label>`;
+  const primary = guest ? (invite ? 'Join table as guest' : 'Play as guest') : mode==='register' ? 'Create account' : mode==='setup' ? 'Create owner account' : 'Sign in';
+  app.innerHTML = `${header()}<main class="auth-layout"><section class="auth-story"><div class="eyebrow">Venatus card room</div><h1>${invite?'Your seat is<br><em class="gold">waiting.</em>':'Cards on<br>the <em class="gold">table.</em>'}</h1><p>Poker, Rummy, Oh Hell, Bluff and Chromatic. Open a table or join your friends for a hand.</p><div class="mini-cards" aria-hidden="true">${card({rank:'A',suit:'S'})}${card({rank:'K',suit:'H'})}${card(null)}</div></section><section class="auth-card"><div class="auth-tabs" aria-label="Entry options">${[['guest','Guest'],['login','Sign in'],['register','Register']].map(([value,label])=>`<button data-action="auth-mode" data-mode="${value}" class="${mode===value?'active':''}" aria-pressed="${mode===value}">${label}</button>`).join('')}</div><h2>${guest ? invite?'Join your friends':'Take a seat' : mode==='login'?'Welcome back':mode==='register'?'Create your account':'Owner setup'}</h2><p class="small">${guest?'Your guest seat is saved in this browser for seven days.':mode==='login'?'Players and owners can use their existing account.':mode==='register'?'Keep your player identity across devices.':'Enter the setup token from your server configuration.'}</p><form id="auth-form" class="stack">${guest?guestForm:credentials}${mode==='setup'?'<label>Owner setup token<input name="token" type="password" required autocomplete="off"></label>':''}<p class="form-error" role="alert"></p><button class="primary" type="submit">${primary}</button></form>${state.setupRequired&&mode!=='setup'?'<button class="subtle small" data-action="auth-mode" data-mode="setup">Owner setup</button>':''}</section></main>`;
 }
 function connection() { return `<span class="connection ${state.connected ? '' : 'disconnected'}"><i class="dot"></i>${state.connected ? 'Live connection' : 'Reconnecting'}</span>`; }
 function gameTile(game, title, sub, description) {
@@ -122,6 +150,11 @@ function renderRoom() {
     app.innerHTML = `${header()}<main class="layout"><div class="eyebrow">Table closed</div><h1>${esc(room.name)}</h1><p>${room.practice?'This casual table is closed. No wallet chips were used.':'The match was canceled. Your chips have been returned to your wallet; completed poker hands retain their results.'}</p><button class="primary" data-action="navigate" data-page="lobby">Return to the casino</button></main>${footer()}`;
     return;
   }
+  if (room.state && (room.game==='bluff' || room.game==='chromatic' && room.state.rulesVersion===2)) {
+    const arrangeOpen = Boolean(document.querySelector('.social-arrange')?.open);
+    app.innerHTML=socialRoom(room,{state,card,esc,fmt,header,footer,connection,gameName,claimRank,arrangeOpen});
+    updateTimer();return;
+  }
   if (room.state && ['poker','ohhell','rummy'].includes(room.game)) { app.innerHTML = specialRoom(room,{state,card,esc,fmt,header,footer,connection,gameName,hostControls}); updateTimer(); return; }
   const game = room.state;
   const waiting = !game;
@@ -132,7 +165,7 @@ function renderRoom() {
   const finished = game?.phase === 'finished';
   const playable = game && !finished && room.status === 'playing';
   const challenge = playable && game.phase === 'challenge' && game.turn !== state.user.id;
-  app.innerHTML = `${header()}<main class="layout game-room game-${room.game}"><div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby" style="padding-left:0">← Back to the casino</button><div class="eyebrow">${gameName(room.game)} · ${room.practice ? 'CASUAL · Table chips only' : room.context === 'casual' ? 'Casual room' : 'Event room'}</div><h2>${esc(room.name)}</h2></div><div class="room-meta">${room.practice?(room.game==='poker'?`<span>Starting stack <strong>${fmt(room.stake)}</strong></span>`:'<span>Scoring only</span>'):`<span>Ante <strong>${fmt(room.stake)}</strong></span>`}<button class="subtle" data-action="rules" data-game="${room.game}">Rules</button><button data-action="leave-table">Leave table</button></div></div>${room.status === 'canceled' ? '<div class="win-banner">This table was canceled. Stakes were returned.</div>' : ''}${room.status === 'paused' ? '<div class="win-banner">The host has paused this table.</div>' : ''}${finished ? `<div class="win-banner">${!game.winner ? 'The round is a draw. Stakes returned.' : game.winner === state.user.id ? 'A hand beautifully played. You win.' : `${esc(playerName(game.winner))} takes the pot.`} <span class="small">${fmt(room.pot)} chips</span></div>` : ''}<section class="felt"><div class="seats">${room.players.map(p => `<div class="seat ${game?.turn === p.id && !finished ? 'active' : ''}"><div class="avatar">${esc(initials(p.name))}</div><div class="seat-name">${esc(p.name)}${p.id === state.user.id ? ' · You' : ''}${p.bot ? ' · Bot' : p.left ? ' · Autoplay' : ''}</div><div class="seat-count">${waiting ? p.id === room.host ? 'TABLE HOST' : 'READY TO PLAY' : `${game.counts?.[p.id] ?? 0} CARDS`}</div></div>`).join('')}</div>${waiting ? `<div class="waiting-center"><h2>Good company is on its way.</h2><p>${room.players.length} of ${room.capacity||6} seats taken. ${Math.max(0, min - room.players.length)} more needed to deal.</p>${room.code ? `<p>Invite friends with room code</p><div class="room-code">${esc(room.code)}</div><button class="subtle small" data-action="copy-code">Copy code</button><button class="subtle small" data-action="copy-link">Copy invite link</button>` : '<p>Friends can find this table in the lobby.</p>'}${room.host === state.user.id ? `${hostControls(room)}<div><button class="primary" data-action="start-table" ${room.players.length < min ? 'disabled' : ''}>Deal the cards</button></div>` : '<p>Waiting for the host to deal.</p>'}</div>` : `<div class="table-center"><div class="pile">${game.topCard ? card(game.topCard) : card(null) + card(null)}</div><div>${room.practice?'':`<div class="pot-label">The pot</div><div class="pot-value number">${fmt(room.pot)}</div>`}<div class="declaration">${room.game === 'bluff' ? `${fmt(game.pileCount)} cards in the pile<br>Rank stays <strong>${esc(game.requiredRank || 'your choice')}</strong>${game.lastPlay ? `<p class="claim">${esc(playerName(game.lastPlay.player))} claims ${game.lastPlay.count} × ${esc(game.lastPlay.rank)}</p>` : ''}` : `Current colour: <strong>${esc(game.activeColor || game.topCard?.color || '')}</strong><p>${game.direction===-1?'← Counterclockwise':'Clockwise →'}</p>`}</div></div></div>`}<div class="table-watermark">VENATUS CASINO</div></section>${game ? `<div class="turn-bar"><strong>${finished ? 'Round complete' : room.status === 'paused' ? 'Play paused' : game.phase === 'challenge' ? 'Believe it. Or call their bluff.' : myTurn ? 'Your hand. Your move.' : `${esc(playerName(game.turn))} is thinking.`}</strong>${!finished ? `<span class="timer" data-deadline="${Number(game.deadline) || 0}"></span>` : ''}<p>${esc(game.message || '')}</p>${game.reveal?.cards?.length ? `<section class="bluff-verdict" aria-live="polite"><strong>${game.reveal.lied ? "Caught bluffing" : "The cards were honest"}</strong><p>${esc(playerName(game.reveal.collector))} collects the pile.</p><div class="reveal">${game.reveal.cards.map(c => card(c)).join('')}</div></section>` : ''}</div>${room.game === 'chromatic' && game.rulesVersion === 2 ? chromaticScore(game) : ''}${handTools(room)}<div class="hand-label">Your hand · ${game.hand?.length || 0} cards${room.game === 'chromatic' && myTurn ? ' · Matching cards are available to select' : ''}</div><div class="hand">${renderHand(room,card,esc,true,c=>!myTurn || (room.game === 'chromatic' && (game.rulesVersion === 2 ? !game.legalCardIds.includes(c.id) : c.color !== 'wild' && c.color !== game.activeColor && c.value !== game.topCard?.value)))}</div><div class="game-actions">${finished ? `${room.practice && room.host===state.user.id?'<button class="primary" data-action="rematch">Play again</button>':''}<button data-action="leave-table">Leave table</button>` : room.game === 'chromatic' && game.rulesVersion === 2 ? chromaticControls(game, playable) : `<button class="primary" data-action="play-cards" ${myTurn && state.selected.size ? '' : 'disabled'}>${room.game === 'bluff' ? `Play ${state.selected.size || ''} card${state.selected.size === 1 ? '' : 's'}` : 'Play card'}</button>${room.game === 'chromatic' ? `<select id="wild-color" aria-label="Wild card colour"><option value="ruby">Ruby</option><option value="emerald">Emerald</option><option value="sapphire">Sapphire</option><option value="gold">Gold</option></select><button data-action="draw-card" ${myTurn ? '' : 'disabled'}>Draw a card</button>` : `<label>Declare rank <select id="bluff-rank" ${!myTurn || game.requiredRank ? 'disabled' : ''}>${(game.ranks || [game.requiredRank]).map(rank => `<option ${rank === game.requiredRank ? 'selected' : ''}>${esc(rank)}</option>`).join('')}</select></label><button data-action="bluff-skip" ${myTurn ? '' : 'disabled'}>Skip turn</button><button class="danger" data-action="challenge" ${challenge ? '' : 'disabled'}>Call bluff</button>`}`}</div>` : ''}<div class="row between"><span class="small muted">${room.practice ? 'Casual table · No wallet rewards or losses.' : waiting ? 'Your ante is reserved until the match starts.' : 'Your committed chips settle when the match ends.'}</span>${connection()}</div></main>${footer()}`;
+  app.innerHTML = `${header()}<main class="layout game-room game-${room.game}"><div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby" style="padding-left:0">← Back to the casino</button><div class="eyebrow">${gameName(room.game)} · ${room.practice ? 'CASUAL · Table chips only' : room.context === 'casual' ? 'Casual room' : 'Event room'}</div><h2>${esc(room.name)}</h2></div><div class="room-meta">${room.practice?(room.game==='poker'?`<span>Starting stack <strong>${fmt(room.stake)}</strong></span>`:'<span>Scoring only</span>'):`<span>Ante <strong>${fmt(room.stake)}</strong></span>`}<button class="subtle" data-action="rules" data-game="${room.game}">Rules</button><button data-action="leave-table">Leave table</button></div></div>${room.status === 'canceled' ? '<div class="win-banner">This table was canceled. Stakes were returned.</div>' : ''}${room.status === 'paused' ? '<div class="win-banner">The host has paused this table.</div>' : ''}${finished ? `<div class="win-banner">${!game.winner ? 'The round is a draw. Stakes returned.' : game.winner === state.user.id ? 'A hand beautifully played. You win.' : `${esc(playerName(game.winner))} takes the pot.`} <span class="small">${fmt(room.pot)} chips</span></div>` : ''}<section class="felt"><div class="seats">${room.players.map(p => `<div class="seat ${game?.turn === p.id && !finished ? 'active' : ''}"><div class="avatar">${esc(initials(p.name))}</div><div class="seat-name">${esc(p.name)}${p.id === state.user.id ? ' · You' : ''}${p.bot ? ' · Bot' : p.left ? ' · Autoplay' : p.online===false && p.id!==state.user.id ? ' · Offline' : ''}</div><div class="seat-count">${waiting ? p.id === room.host ? 'TABLE HOST' : 'READY TO PLAY' : `${game.counts?.[p.id] ?? 0} CARDS`}</div></div>`).join('')}</div>${waiting ? `<div class="waiting-center"><h2>Good company is on its way.</h2><p>${room.players.length} of ${room.capacity||6} seats taken. ${Math.max(0, min - room.players.length)} more needed to deal.</p>${room.code ? `<p>Invite friends with room code</p><div class="room-code">${esc(room.code)}</div><button class="subtle small" data-action="copy-code">Copy code</button><button class="subtle small" data-action="copy-link">Copy invite link</button>` : '<p>Friends can find this table in the lobby.</p>'}${room.host === state.user.id ? `${hostControls(room)}<div><button class="primary" data-action="start-table" ${room.players.length < min ? 'disabled' : ''}>Deal the cards</button></div>` : '<p>Waiting for the host to deal.</p>'}</div>` : `<div class="table-center"><div class="pile">${game.topCard ? card(game.topCard) : card(null) + card(null)}</div><div>${room.practice?'':`<div class="pot-label">The pot</div><div class="pot-value number">${fmt(room.pot)}</div>`}<div class="declaration">${room.game === 'bluff' ? `${fmt(game.pileCount)} cards in the pile<br>Rank stays <strong>${esc(game.requiredRank || 'your choice')}</strong>${game.lastPlay ? `<p class="claim">${esc(playerName(game.lastPlay.player))} claims ${game.lastPlay.count} × ${esc(game.lastPlay.rank)}</p>` : ''}` : `Current colour: <strong>${esc(game.activeColor || game.topCard?.color || '')}</strong><p>${game.direction===-1?'← Counterclockwise':'Clockwise →'}</p>`}</div></div></div>`}<div class="table-watermark">VENATUS CASINO</div></section>${game ? `<div class="turn-bar"><strong>${finished ? 'Round complete' : room.status === 'paused' ? 'Play paused' : game.phase === 'challenge' ? 'Believe it. Or call their bluff.' : myTurn ? 'Your hand. Your move.' : `${esc(playerName(game.turn))} is thinking.`}</strong>${!finished ? `<span class="timer" data-deadline="${Number(game.deadline) || 0}"></span>` : ''}<p>${esc(game.message || '')}</p>${game.reveal?.cards?.length ? `<section class="bluff-verdict" aria-live="polite"><strong>${game.reveal.lied ? "Caught bluffing" : "The cards were honest"}</strong><p>${esc(playerName(game.reveal.collector))} collects the pile.</p><div class="reveal">${game.reveal.cards.map(c => card(c)).join('')}</div></section>` : ''}</div>${room.game === 'chromatic' && game.rulesVersion === 2 ? chromaticScore(game) : ''}${handTools(room)}<div class="hand-label">Your hand · ${game.hand?.length || 0} cards${room.game === 'chromatic' && myTurn ? ' · Matching cards are available to select' : ''}</div><div class="hand">${renderHand(room,card,esc,true,c=>!myTurn || (room.game === 'chromatic' && (game.rulesVersion === 2 ? !game.legalCardIds.includes(c.id) : c.color !== 'wild' && c.color !== game.activeColor && c.value !== game.topCard?.value)))}</div><div class="game-actions">${finished ? `${room.practice && room.host===state.user.id?'<button class="primary" data-action="rematch">Play again</button>':''}<button data-action="leave-table">Leave table</button>` : room.game === 'chromatic' && game.rulesVersion === 2 ? chromaticControls(game, playable) : `<button class="primary" data-action="play-cards" ${myTurn && state.selected.size ? '' : 'disabled'}>${room.game === 'bluff' ? `Play ${state.selected.size || ''} card${state.selected.size === 1 ? '' : 's'}` : 'Play card'}</button>${room.game === 'chromatic' ? `<select id="wild-color" aria-label="Wild card colour"><option value="ruby">Ruby</option><option value="emerald">Emerald</option><option value="sapphire">Sapphire</option><option value="gold">Gold</option></select><button data-action="draw-card" ${myTurn ? '' : 'disabled'}>Draw a card</button>` : `<label>Declare rank <select id="bluff-rank" ${!myTurn || game.requiredRank ? 'disabled' : ''}>${(game.ranks || [game.requiredRank]).map(rank => `<option ${rank === game.requiredRank ? 'selected' : ''}>${esc(rank)}</option>`).join('')}</select></label><button data-action="bluff-skip" ${myTurn ? '' : 'disabled'}>Skip turn</button><button class="danger" data-action="challenge" ${challenge ? '' : 'disabled'}>Call bluff</button>`}`}</div>` : ''}<div class="row between"><span class="small muted">${room.practice ? 'Casual table · No wallet rewards or losses.' : waiting ? 'Your ante is reserved until the match starts.' : 'Your committed chips settle when the match ends.'}</span>${connection()}</div></main>${footer()}`;
   updateTimer();
 }
 function renderEvents() {
@@ -152,32 +185,39 @@ function renderAdmin() {
 function render() { if (state.user && state.page==='events') { renderEvents(); return; } if (!state.user) renderAuth(); else if (state.page === 'room') renderRoom(); else if (state.page === 'admin') renderAdmin(); else if (state.page === 'history') renderHistory(); else renderLobby(); }
 let refreshing = false, needsRefresh = false;
 async function refresh() {
-  if (!state.user) return;
-  if (refreshing) { needsRefresh = true; return; }
-  refreshing = true;
+  if (!state.user || savingAccount) return;
+  if (refreshing) { needsRefresh=true; return; }
+  refreshing=true;
+  const page=state.page, roomId=state.roomId, context=state.context;
   try {
-    if (state.page === 'room' && state.roomId) {
-      const room = await api(`/api/tables/${encodeURIComponent(state.roomId)}`);
-      if (state.room?.id===room.id && state.room?.state?.winner !== room.state?.winner && room.state?.winner === state.user.id) sound('win');
-      else if (state.room?.state?.turn !== room.state?.turn && room.state?.turn === state.user.id) sound('turn');
+    if (page==='room' && roomId) {
+      const room=await api(`/api/tables/${encodeURIComponent(roomId)}`);
+      if(state.page!==page || state.roomId!==roomId)return;
       const previous=state.room;
-      state.room = room; state.context=room.context;
-      if(previous?.id===room.id && previous.version!==room.version) {
-        const before=previous.state, after=room.state;
-        state.motion=after?.reveal && JSON.stringify(before?.reveal)!==JSON.stringify(after.reveal) ? 'reveal' : before?.phase!==after?.phase ? 'phase' : 'move';
-        if(state.motion==='reveal') sound(after.reveal.lied?'win':'error');
-        else if(before?.turn===after?.turn) sound('deal');
+      const alreadyRendered=Boolean(document.querySelector('.game-room'));
+      const unchanged=previous?.id===room.id && previous.version===room.version;
+      state.room=room;state.context=room.context;
+      if(unchanged && alreadyRendered && JSON.stringify(previous.players)===JSON.stringify(room.players))return;
+      const scroll=document.querySelector('.hand')?.scrollLeft||0;
+      renderRoom();
+      const hand=document.querySelector('.hand');if(hand)hand.scrollLeft=scroll;
+      if (!unchanged) {
+        const event=socialTransition(previous,room);
+        const cue=event?.sound || specialTransitionSound(previous,room);
+        if(previous?.id===room.id && previous.state?.winner!==room.state?.winner && room.state?.winner===state.user.id)sound('win');
+        else if(cue)sound(cue);
+        else if(previous?.id===room.id && previous.state?.turn!==room.state?.turn && room.state?.turn===state.user.id)sound('turn');
+        animateSocialTransition(event);
+        if(['poker','ohhell','rummy'].includes(room.game))animateSpecialTransition(previous,room);
       }
-    } else if (state.page === 'admin') state.admin = await api('/api/admin');
-    else state.lobby = await api(`/api/lobby?context=${encodeURIComponent(state.context)}`);
-    render();
-    if(state.motion && state.page==='room') {
-      const target=document.querySelector(state.motion==='reveal'?'.bluff-verdict':'.table-center');
-      if(target && !matchMedia('(prefers-reduced-motion: reduce)').matches) target.animate([{transform:'translateY(8px) scale(.98)',opacity:.65},{transform:'translateY(0) scale(1)',opacity:1}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'});
-      state.motion=null;
+    } else {
+      const data=page==='admin'?await api('/api/admin'):await api(`/api/lobby?context=${encodeURIComponent(context)}`);
+      if(state.page!==page || state.context!==context)return;
+      if(page==='admin')state.admin=data;else state.lobby=data;
+      render();
     }
-  } catch (error) { toast(error.message); }
-  finally { refreshing = false; if (needsRefresh) { needsRefresh = false; refresh(); } }
+  } catch(error) { toast(error.message); }
+  finally {refreshing=false;if(needsRefresh){needsRefresh=false;refresh();}}
 }
 function connect() {
   if (!state.user) return;
@@ -198,7 +238,15 @@ function connect() {
   current.addEventListener('error', () => {});
 }
 function updateConnection() { document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('disconnected', !state.connected); el.innerHTML = `<i class="dot"></i>${state.connected ? 'Live connection' : 'Reconnecting'}`; }); }
-function updateTimer() { document.querySelectorAll('[data-deadline]').forEach(el => { const secs = Math.max(0, Math.ceil((Number(el.dataset.deadline) - Date.now()) / 1000)); el.textContent = state.room?.status === 'paused' ? 'Paused' : `${secs}s`; }); }
+function updateTimer() {
+  document.querySelectorAll('[data-deadline]').forEach(el => {
+    const secs=Math.max(0,Math.ceil((Number(el.dataset.deadline)-Date.now()-serverClockOffset)/1000));
+    const paused=state.room?.status==='paused';
+    el.textContent=paused?'Paused':`${secs}s`;
+    el.classList.toggle('time-short',!paused && secs<=8);
+    el.setAttribute('aria-label',paused?'Timer paused':`${secs} seconds remaining`);
+  });
+}
 setInterval(updateTimer, 500);
 function openModal(title, content) { modal.innerHTML = `<div class="modal-head"><h2>${title}</h2><button class="close" data-action="close-modal" aria-label="Close dialog">×</button></div>${content}`; modal.showModal(); }
 function rules(game) {
@@ -223,16 +271,22 @@ function managePlayer(id) {
   const user = state.admin.users.find(u => u.id === id); if (!user) return;
   if (user.role === 'superadmin') { toast('The owner account is protected from changes here.'); return; }
   const owner = state.user.role === 'superadmin';
-  openModal(`Manage ${esc(user.name)}`, `<form id="manage-player-form" data-id="${esc(id)}" class="stack"><label class="check"><input type="checkbox" name="banned" ${user.banned ? 'checked' : ''}> Ban this player</label><label class="check"><input type="checkbox" name="revoke"> Revoke all sessions</label>${owner ? `<label>Role<select name="role">${['player', 'moderator'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label><label>Chip adjustment (optional)<input name="adjustment" type="number" step="1" placeholder="Positive to issue, negative to remove"></label><label>Wallet context<select name="context"><option value="casual">Casual</option>${(state.admin.events || []).map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></label>` : ''}<label>Reason<input name="reason" required maxlength="200" placeholder="Recorded in the audit trail"></label><p class="small">Changes are recorded. A ban or session revocation will affect the player’s access.</p><p class="form-error" role="alert"></p><button class="primary">Confirm changes</button></form>`);
+  openModal(`Manage ${esc(user.name)}`, `<form id="manage-player-form" data-id="${esc(id)}" class="stack"><label class="check"><input type="checkbox" name="banned" ${user.banned ? 'checked' : ''}> Ban this player</label><label class="check"><input type="checkbox" name="revoke"> Revoke all sessions</label>${owner ? `${user.role!=='guest'?`<label>Role<select name="role">${['player', 'moderator'].map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>`: ''}<label>Chip adjustment (optional)<input name="adjustment" type="number" step="1" placeholder="Positive to issue, negative to remove"></label><label>Wallet context<select name="context"><option value="casual">Casual</option>${(state.admin.events || []).map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></label>` : ''}<label>Reason<input name="reason" required maxlength="200" placeholder="Recorded in the audit trail"></label><p class="small">Changes are recorded. A ban or session revocation will affect the player’s access.</p><p class="form-error" role="alert"></p><button class="primary">Confirm changes</button></form>`);
 }
 async function enterRoom(id) { state.roomId = id; state.page = 'room'; state.selected.clear(); await refresh(); }
 async function submitAction(action) {
   if (state.busy) return;
-  state.busy = true;
-  document.querySelectorAll('.game-actions button').forEach(b=>b.disabled=true);
+  state.busy=true;
+  document.querySelectorAll('.game-actions button, .pile-action, .spectrum-deck').forEach(b=>b.disabled=true);
   app.setAttribute('aria-busy','true');
-  try { await api(`/api/tables/${encodeURIComponent(state.roomId)}/action`, { actionId: crypto.randomUUID(), expectedVersion: state.room.version, action }); state.selected.clear(); sound('deal'); await refresh(); }
-  finally { state.busy = false; app.removeAttribute('aria-busy'); if(state.page==='room') renderRoom(); }
+  try {
+    await api(`/api/tables/${encodeURIComponent(state.roomId)}/action`, {actionId:crypto.randomUUID(),expectedVersion:state.room.version,action});
+    state.selected.clear();
+    await refresh();
+  } catch(error) {
+    if(state.page==='room')renderRoom();
+    throw error;
+  } finally {state.busy=false;app.removeAttribute('aria-busy');}
 }
 document.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]'); if (!button || button.disabled) return;
@@ -246,8 +300,15 @@ document.addEventListener('click', async event => {
     else if (action === 'reload') location.reload();
     else if (action === 'auth-mode') { state.authMode = button.dataset.mode; renderAuth(); }
     else if (action === 'close-modal') modal.close();
+    else if (action === 'accept-event-invite') { button.disabled=true; try { await joinByCode(button.dataset.code, true); } finally {button.disabled=false;} }
     else if (action === 'navigate') { state.page = button.dataset.page; await refresh(); }
-    else if (action === 'logout') { await api('/api/logout', {}); state.user = null; socket?.close(); state.page = 'lobby'; state.room = null; renderAuth(); }
+    else if (action === 'save-guest') {
+      openModal('Save your guest seat', '<form id="save-guest-form" class="stack"><p>Choose a player name and password to keep this seat, your event chips and your history across devices.</p><label>Player name<input name="name" minlength="3" maxlength="24" required autocomplete="username"></label><label>Password<input name="password" type="password" minlength="12" maxlength="128" required autocomplete="new-password"></label><p class="form-error" role="alert"></p><button class="primary" type="submit">Save account</button></form>');
+    } else if (action === 'logout' && state.user?.role==='guest') {
+      openModal('End guest session?', '<p>Ending this session gives up access to this guest seat and its event chips. To keep them, close this dialog and choose Save account.</p><button data-action="confirm-logout">End guest session</button>');
+    } else if (action === 'logout' || action === 'confirm-logout') {
+      await api('/api/logout', {}); location.assign('/');
+    }
     else if (action === 'rules') rules(button.dataset.game);
     else if (action === 'create-table') createTable(button.dataset.game);
     else if (action === 'join-code') openModal('An invitation to play.', '<form id="join-code-form" class="stack"><label>Room code<input name="code" required maxlength="20" autocomplete="off" placeholder="Enter your invitation code"></label><p class="form-error" role="alert"></p><button class="primary">Take a seat</button></form>');
@@ -262,12 +323,17 @@ document.addEventListener('click', async event => {
     else if (action === 'start-table') { await api(`/api/tables/${encodeURIComponent(state.roomId)}/start`, {}); sound('deal'); await refresh(); }
     else if (action === 'leave-table' && ['playing','paused'].includes(state.room?.status)) { openModal('Leave this table?', `<p>Autoplay will finish your seat. ${state.room.practice ? 'Practice chips have no wallet value.' : 'Your committed chips stay in the match and settle when it ends.'} You can join another table immediately.</p><button class="danger" data-action="confirm-leave">Leave and enable autoplay</button>`); }
     else if (action === 'leave-table' || action === 'confirm-leave') { modal.close(); await api(`/api/tables/${encodeURIComponent(state.roomId)}/leave`, {}); state.page = 'lobby'; state.roomId = null; state.room = null; await refresh(); }
-    else if (action === 'copy-link') { const link = new URL('/', location.origin); link.searchParams.set('join', state.room.code); await navigator.clipboard.writeText(link.href); toast('Room link copied. Friends can sign in or register to join.'); }
+    else if (action === 'copy-link') { const link = new URL('/', location.origin); link.searchParams.set('join', state.room.code); await navigator.clipboard.writeText(link.href); toast('Room link copied. Friends can join as guests.'); }
     else if (action === 'copy-code') { await navigator.clipboard.writeText(state.room.code); toast('Invitation code copied.'); }
-    else if (action === 'select-card') { const id = button.dataset.id; if (state.selected.has(id)) state.selected.delete(id); else { if (state.room.game !== 'bluff') state.selected.clear(); if (state.room.game === 'bluff' && state.selected.size >= 4) return toast('Play up to four cards at a time.'); state.selected.add(id); } sound(); renderRoom(); }
+    else if (action === 'select-card') { const id = button.dataset.id; if (state.selected.has(id)) state.selected.delete(id); else { if (state.room.game !== 'bluff') state.selected.clear(); if (state.room.game === 'bluff' && state.selected.size >= 4) return toast('Play up to four cards at a time.'); state.selected.add(id); } sound(); const scroll=document.querySelector('.hand')?.scrollLeft||0;
+      if(document.querySelector('.social-room'))updateSocialSelection(state.room,state,esc,claimRank);
+      else { renderRoom(); const hand=document.querySelector('.hand'); if(hand)hand.scrollLeft=scroll; }
+    }
+    else if (action === 'play-wild') await submitAction({type:'play',cards:[...state.selected],color:button.dataset.color});
+    else if (action === 'starting-colour') await submitAction({type:'choose-color',color:button.dataset.color});
     else if (action === 'bluff-skip') await submitAction({type:'skip'});
-    else if (action === 'play-cards') await submitAction({ type: 'play', cards: [...state.selected], ...(state.room.game === 'chromatic' ? { color: document.querySelector('#wild-color').value } : {rank:document.querySelector('#bluff-rank')?.value}) });
-    else if (action === 'special-action') await submitAction({type:button.dataset.move,cards:[...state.selected],source:button.dataset.source,amount:Number(document.querySelector('#bet-amount')?.value ?? document.querySelector('#bid-amount')?.value)});
+    else if (action === 'play-cards') await submitAction({ type: 'play', cards: [...state.selected], ...(state.room.game === 'chromatic' ? { color: document.querySelector('#wild-color')?.value } : {rank:document.querySelector('#bluff-rank')?.value}) });
+    else if (action === 'special-action') await submitAction({type:button.dataset.move,cards:[...state.selected],source:button.dataset.source,amount:Number(button.dataset.amount ?? document.querySelector('#bet-amount')?.value ?? document.querySelector('#bid-amount')?.value)});
     else if (action === 'chromatic-action') await submitAction({type:button.dataset.move,target:button.dataset.target,color:document.querySelector('#wild-color')?.value});
     else if (action === 'draw-card') await submitAction({ type: 'draw' });
     else if (action === 'challenge') await submitAction({ type: 'challenge' });
@@ -295,11 +361,22 @@ document.addEventListener('submit', async event => {
     if (form.id === 'auth-form') {
       await api(`/api/${state.authMode}`, Object.fromEntries(values));
       const me = await api('/api/me'); state.user = me.user; state.setupRequired = me.setupRequired; state.context = 'casual'; state.page = 'lobby'; restoreSeat(me); await refresh(); connect(); await joinInvitation();
+    } else if (form.id === 'save-guest-form') {
+      savingAccount = true;
+      clearTimeout(refreshTimeout);clearTimeout(reconnectTimeout);
+      const oldSocket=socket;socket=null;oldSocket?.close();
+      try {
+        // Finish reads using the old cookie before rotating the guest session.
+        while(refreshing) await new Promise(resolve=>setTimeout(resolve,20));
+        const result=await api('/api/register',Object.fromEntries(values));
+        state.user=result.user;modal.close();
+        toast('Account saved. You can sign in on another device.');
+      } finally {savingAccount=false;connect();await refresh();}
     } else if (form.id === 'create-table-form') {
       const result = await api('/api/tables', { name: values.get('name'), game: values.get('game'), stake: Number(values.get('stake')), private: values.has('private'), context: state.context, capacity: Number(values.get('capacity')||6), ...(values.get('smallBlind')?{smallBlind:Number(values.get('smallBlind'))}:{}), ...(values.get('bigBlind')?{bigBlind:Number(values.get('bigBlind'))}:{}), bots: Number(values.get('bots') || 0), practice: state.context==='casual' });
       modal.close(); await enterRoom(result.id || result.table?.id);
     } else if (form.id === 'join-code-form') {
-      const result = await api('/api/rooms/join', { code: String(values.get('code')).trim().toUpperCase() }); modal.close(); await enterRoom(result.id || result.table?.id);
+      modal.close(); await joinByCode(String(values.get('code')).trim().toUpperCase());
     } else if (form.id === 'event-form') {
       await api('/api/admin/event', { name: values.get('name'), description:values.get('description')||'', ...(values.get('minStake')!==''&&values.get('minStake')!==null?{minStake:Number(values.get('minStake')),maxStake:Number(values.get('maxStake'))}:{}), participantLimit: values.get('participantLimit') ? Number(values.get('participantLimit')) : null, startsAt: values.get('startsAt') ? new Date(values.get('startsAt')).getTime() : null, endsAt: values.get('endsAt') ? new Date(values.get('endsAt')).getTime() : null, startingChips: Number(values.get('startingChips')), stakes: String(values.get('stakes')).split(',').map(s => Number(s.trim())), games: ['bluff', 'chromatic', 'poker', 'ohhell', 'rummy'].filter(g => values.has(g)) }); toast('Event created. Open registration when you’re ready.'); await refresh();
     } else if(form.id==='configure-event-form') {
@@ -322,6 +399,7 @@ document.addEventListener('submit', async event => {
 });
 document.addEventListener('change', async event => {
   try {
+    if (event.target.id === 'bluff-rank') {claimRank=event.target.value;updateSocialSelection(state.room,state,esc,claimRank);}
     if (event.target.id === 'context') { state.context = event.target.value; await refresh(); }
     if (event.target.classList.contains('event-status')) {
       const id = event.target.dataset.id, status = event.target.value;
@@ -336,16 +414,27 @@ document.addEventListener('change', async event => {
 document.addEventListener('input', event => {
   if (event.target.id === 'player-search') document.querySelectorAll('[data-player-name]').forEach(row => row.hidden = !row.dataset.playerName.includes(event.target.value.toLowerCase()));
 });
+installSpecialInput();
 installHandDrag(()=>state.room,renderRoom);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && state.user) refresh(); });
+async function joinByCode(code, registerForEvent = false) {
+  const result = await api('/api/rooms/join', { code, previewEvent:true, registerForEvent });
+  if (result.registration) {
+    const e = result.registration;
+    openModal('Join ' + esc(e.name), `<p>You will receive ${fmt(e.startingChips)} event chips. This table’s stake is ${fmt(e.stake)} chips.</p><button class="primary" data-action="accept-event-invite" data-code="${esc(code)}">Register and take a seat</button>`);
+    return;
+  }
+  if (modal.open) modal.close();
+  await enterRoom(result.id);
+  if (pendingInvite) { pendingInvite=''; history.replaceState(null,'','/'); }
+}
 async function joinInvitation() {
   if (!pendingInvite || !state.user) return;
-  const code = pendingInvite; pendingInvite = '';
-  try { const room = await api('/api/rooms/join', { code }); await enterRoom(room.id); history.replaceState(null, '', '/'); }
-  catch (error) { toast(error.message + ' The room may have closed or reset. Ask the host for a new link.'); }
+  try { await joinByCode(pendingInvite); }
+  catch (error) { toast(error.message); }
 }
 async function boot() {
-  try { const me = await api('/api/me'); state.user = me.user; state.setupRequired = me.setupRequired; if (state.user) { restoreSeat(me); await refresh(); connect(); await joinInvitation(); } else { if (pendingInvite) state.authMode = 'register'; renderAuth(); } }
+  try { const me = await api('/api/me'); state.user = me.user; state.setupRequired = me.setupRequired; if (state.user) { restoreSeat(me); await refresh(); connect(); await joinInvitation(); } else { renderAuth(); } }
   catch (error) { app.innerHTML = `<main class="initial">${brand()}<h2>The card room is resting.</h2><p>${esc(error.message)}</p><button data-action="reload">Try again</button></main>`; }
 }
 function restoreSeat(me) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {socialRoom} from '../public/social.js';
 import {specialRoom} from '../public/special.js';
 import {orderedHand,handTools,renderHand} from '../public/experience.js';
 import {createGame,viewGame} from '../src/games.js';
@@ -9,7 +10,7 @@ function client(){
  const app={innerHTML:''},modal={innerHTML:'',showModal(){},close(){}};
  const document={querySelector:s=>s==='#app'?app:modal,addEventListener(){},querySelectorAll:()=>[]};
  const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace(/boot\(\);\s*$/,'');
- const ctx=vm.createContext({document,location:{search:''},URLSearchParams,localStorage:{getItem:()=>null},window:{},setInterval:()=>0,clearInterval(){},setTimeout:()=>0,clearTimeout(){},specialRoom,orderedHand,handTools,renderHand,handleExperienceAction:()=>false,installHandDrag(){},console});
+ const ctx=vm.createContext({document,location:{search:''},URLSearchParams,localStorage:{getItem:()=>null},window:{},setInterval:()=>0,clearInterval(){},setTimeout:()=>0,clearTimeout(){},specialRoom,orderedHand,handTools,renderHand,handleExperienceAction:()=>false,installHandDrag(){},console,socialRoom,installSpecialInput(){}});
  vm.runInContext(source+'\nglobalThis.ui={state,renderRoom,renderLobby,renderEvents,createTable};',ctx);
  ctx.ui.state.user={id:'a',name:'Alice',role:'player'};
  return {...ctx.ui,app,modal};

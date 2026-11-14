@@ -1,0 +1,79 @@
+.social-room {
+  --table-edge:#5e483a;
+  --table-face:#34282c;
+  --table-ink:#efc58f;
+  max-width:1040px;
+}
+.game-chromatic.social-room {--table-edge:#34444f;--table-face:#172a33;--table-ink:#90d6cb}
+.social-room .room-top {margin-bottom:10px}
+.social-room .room-top .subtle {padding-left:0}
+.social-mat {position:relative;isolation:isolate;overflow:hidden;border:1px solid var(--table-edge);border-radius:22px;background:radial-gradient(ellipse at 50% 95%,var(--table-face),#16191c 86%);box-shadow:0 14px 38px #0003}
+.social-seats {margin:0;padding:10px 14px;list-style:none;display:flex;justify-content:center;gap:4px;background:#070b0c70;border-bottom:1px solid #dbd0ad24}
+.social-seats li {min-width:0;max-width:180px;flex:1;display:grid;gap:3px;padding:6px 9px;border:1px solid transparent;border-radius:8px}
+.social-seats li b {overflow-wrap:anywhere;font-size:.88rem;line-height:1.16}
+.social-seats li span {color:#c2bdb0;font-size:.72rem;line-height:1.2}
+.social-seats .seat-active {background:#fff9da0a;border-color:var(--table-ink);box-shadow:inset 3px 0 var(--table-ink)}
+.bluff-center,.spectrum-center,.social-verdict {display:flex;justify-content:center;align-items:center;gap:clamp(20px,5vw,76px);padding:18px 12px;min-height:146px}
+.social-mat h3 {font-size:clamp(27px,4vw,44px);line-height:1.06;margin:4px 0 5px;letter-spacing:-.035em}
+.social-mat p {font-size:.84rem;margin:3px 0;color:#e0d7c9}
+.social-mat small,.social-hand-head,.social-caption,.deck-pair>div>span,.spectrum-deck>span {font-family:var(--sans,system-ui,sans-serif);font-size:.73rem;letter-spacing:.035em;color:#d8cebd}
+.social-caption {text-align:center;padding:0 10px 9px}
+.bluff-stack {position:relative;display:grid;place-items:center;width:76px;height:97px;border-radius:8px;border:1px dashed #c9ab854e;color:#d1bfa4;font-size:.8rem;text-align:center}
+.bluff-stack .playing-card {position:absolute;top:0;left:5px;width:65px;height:96px;transform:rotate(-8deg);background:repeating-linear-gradient(45deg,#45272d 0 2px,#60363d 2px 5px)}
+.bluff-stack .playing-card:nth-child(2){transform:translate(3px,1px) rotate(-2deg)}
+.bluff-stack .playing-card:nth-child(3){transform:translate(6px,2px) rotate(5deg)}
+.social-verdict {margin:0;border:0;border-radius:0;background:none}
+.social-verdict h3 {font-size:clamp(22px,3vw,34px)}
+.revealed-cards {display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px}
+.revealed-cards .playing-card {width:52px;height:76px;padding:4px}
+.revealed-cards .corner {font-size:15px}
+.revealed-cards .center-suit {width:22px;height:26px}
+.deck-pair {display:flex;gap:14px;align-items:center}
+.deck-pair .playing-card {width:68px;height:95px}
+.deck-pair>div,.deck-pair>button {display:grid;place-items:center;gap:6px}
+.spectrum-deck,.spectrum-deck:disabled {padding:0;border:0;background:none;box-shadow:none;opacity:1}
+.spectrum-deck:enabled:focus-visible {outline:2px solid #f4e7c4;outline-offset:4px}
+.spectrum-deck .back {background:repeating-linear-gradient(-50deg,#223944 0 4px,#30434b 4px 6px);box-shadow:2px 2px #77745e,4px 4px #1b262a;transform:rotate(-4deg)}
+.spectrum-deck .back:before {width:65%;height:76%;border-radius:50%}
+.spectrum-discard .playing-card {transform:rotate(4deg)}
+.ink-ruby {--hue:#d95868}.ink-emerald {--hue:#3ba477}.ink-sapphire {--hue:#599cd0}.ink-gold {--hue:#e1b34b}
+.colour-status h3 {display:flex;align-items:center;gap:8px;font-family:inherit;font-weight:750;font-size:clamp(22px,4vw,37px)}
+.colour-status i,.colour-choice i {display:inline-block;width:.65em;height:.65em;border-radius:50%;background:var(--hue,#abb4b1);box-shadow:inset 0 0 0 1px #fff4}
+.colour-status .play-direction {display:inline-block;font:1.6rem/1 system-ui;vertical-align:-.12em;margin-right:5px}
+.colour-status .top-value,.stack-tag {display:inline-block;margin-top:8px;font-size:.8rem}
+.stack-tag {border:1px solid #f2b89988;padding:3px 8px;border-radius:20px;color:#ffd5ae}
+.social-room.game-chromatic .color-red {background:#a63046}.social-room.game-chromatic .color-green {background:#13694d}
+.social-room.game-chromatic .color-blue {background:#245b91}.social-room.game-chromatic .color-yellow {background:#f0bf57;color:#271a0e}
+.social-room.game-chromatic .color-wild {background:conic-gradient(from -35deg at 50% 50%,#a63046 25%,#13694d 0 50%,#245b91 0 75%,#845615 0)}
+.social-room.game-chromatic .playing-card:not(.back)::after {content:'';position:absolute;inset:18% 12%;border:1.5px solid currentColor;opacity:.64;transform:rotate(22deg);border-radius:50%;pointer-events:none}
+.social-turn {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #f1dbba2a;min-height:58px}
+.social-turn strong {font-size:1rem;color:#fff7e8}
+.social-turn p {font-size:.84rem;line-height:1.35;margin:3px 0 0;color:#c8c7b9}
+.timer.time-short {color:#ffd3ae;border-color:#d59c65}
+.social-hand-head {display:flex;justify-content:space-between;align-items:start;margin:12px 0 0}
+.social-arrange {text-align:right}.social-arrange summary {cursor:pointer}.social-arrange .hand-tools {justify-content:flex-end}
+.social-room .hand {margin:0;padding:12px 4px 4px;justify-content:safe center;gap:4px;max-width:100%;overscroll-behavior-x:contain}
+.social-room .hand button[aria-pressed=true] {transform:translateY(-8px);outline:2px solid var(--table-ink)}
+.social-room .hand .playing-card:disabled {opacity:.69;filter:saturate(.64)}
+.social-room .social-actions {display:flex;align-items:center;min-height:0;gap:8px;flex-wrap:wrap;margin:8px 0 10px}
+.social-actions:empty {display:none}
+.social-actions button,.social-actions select {min-height:40px}
+.social-actions .claim-picker {display:flex;align-items:center;gap:6px}
+.social-actions .challenge-button {color:#fff2df;background:#743d44;border:1px solid #bd7b7b}
+.colour-choices {border:0;display:flex;flex-wrap:wrap;gap:5px;padding:0;margin:0;min-width:0}
+.colour-choices legend {padding:0 0 4px;font-size:.76rem}
+.colour-choice {display:inline-flex;align-items:center;gap:5px;padding:5px 9px}
+.flying-card {position:absolute;z-index:3;pointer-events:none;width:30px;height:42px;background:repeating-linear-gradient(45deg,#2f403c 0 3px,#55635c 3px 5px);border:2px solid #d1bd99;border-radius:4px;transform:translate(-50%,-50%)}
+@media(max-width:660px){
+  .social-seats {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:6px;gap:0}
+  .social-seats li {padding:4px 6px}.social-seats li b {font-size:.8rem}
+  .social-room .room-meta button,.social-actions button,.social-actions select {min-height:44px}
+  .bluff-center,.spectrum-center,.social-verdict {min-height:118px;padding:12px 8px;gap:18px}
+  .social-verdict {flex-wrap:wrap}.social-turn {padding:8px 0}
+  .social-room .hand {overflow-x:auto;flex-wrap:nowrap;scroll-padding:6px;scrollbar-width:thin}
+  .social-room .hand .hand-card {flex:none}
+  .colour-choices {gap:4px}.social-room .social-actions {padding-block:6px}
+  .social-arrange .hand-tools {max-width:65vw}
+}
+@media(max-width:380px){.deck-pair {gap:6px}.deck-pair .playing-card {width:51px;height:75px}.spectrum-center {gap:12px}}
+@media(prefers-reduced-motion:reduce){.social-room *,.social-room *::after{scroll-behavior:auto!important;transition-duration:0s!important;animation-duration:0s!important}}
