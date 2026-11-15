@@ -42,3 +42,11 @@ test('Rummy drop values and joker-discard pickup restrictions',()=>{
  let g=createRummy(['a','b'],0);g.discard=[c('JOKER','joker')];assert.throws(()=>actRummy(g,'a',{type:'draw',source:'discard'},1),/Jokers/);
  const done=actRummy(g,'a',{type:'drop'},1);assert.equal(done.winner,'b');assert.equal(done.penalties.a,20);
 });
+
+test('checking a Rummy grouping does not publish private analysis in the shared message',()=>{
+  const g=createRummy(['a','b'],0);
+  const before=viewRummy(g,'b');
+  const checked=actRummy(g,'a',{type:'analyze'},1);
+  assert.deepEqual(viewRummy(checked,'b'),before);
+  assert.ok(viewRummy(checked,'a').analysis);
+});

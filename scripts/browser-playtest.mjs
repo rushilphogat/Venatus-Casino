@@ -41,6 +41,7 @@ async function seat(game, index, code) {
   page.on('response',r=>{if(r.url().startsWith(origin) && r.status()>=400 && !r.url().includes('favicon'))errors.add(r.status()+' '+r.url().slice(origin.length));});
   await page.goto(origin+(code?'/?join='+code:'/'));
   const name='QA '+game+' '+index;
+  if(captures && game==='poker' && index===0)await page.screenshot({path:join(captures,'guest-entry.png'),fullPage:true});
   await page.locator('#auth-form input[name=name]').fill(name);
   assert.equal(await page.locator('#auth-form input[type=password]').count(),0,'guest entry includes password');
   await page.getByRole('button',{name:/play as guest|join table as guest/i}).click();
@@ -84,14 +85,36 @@ async function scenario(game) {
     const host=await seat(game,0);
     players.push(host);
     const page=host.page;
+    await page.locator('[data-action=lobby-game][data-game="'+game+'"]').click();
     await page.locator('[data-action=create-table][data-game="'+game+'"]').click();
     const form=page.locator('#create-table-form');
+    if(game==='poker') {
+      await form.locator('[name=capacity]').selectOption('2');
+      assert.equal(await form.locator('[name=bots] option[value="3"]').evaluate(el=>el.disabled),true,await page.locator('#toast').innerText());
+      await form.locator('[name=capacity]').selectOption('6');
+    }
     await form.locator('[name=private]').check();
     await form.locator('button').last().click();
     const code=(await page.locator('.room-code').first().innerText()).trim();
     players.push(await seat(game,1,code));
     if(['bluff','ohhell'].includes(game)) players.push(await seat(game,2,code));
     const r=(await get(page,'/api/me')).activeTable.id;
+    if(game==='poker') {
+      if(captures)await page.screenshot({path:join(captures,'waiting-desktop.png'),fullPage:true});
+      await page.locator('[data-action=navigate][data-page=lobby]').click();
+      await page.locator('[data-action=lobby-game]').first().waitFor();
+      await page.locator('[data-action=lobby-game][data-game=rummy]').click();
+      assert.equal(await page.locator('[data-action=create-table]').getAttribute('data-game'),'rummy');
+      await page.locator('[data-action=lobby-game][data-game=poker]').click();
+      if(captures)await page.screenshot({path:join(captures,'lobby-desktop.png'),fullPage:true});
+      await page.setViewportSize({width:390,height:844});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile lobby overflow');
+      if(captures)await page.screenshot({path:join(captures,'lobby-mobile.png'),fullPage:true});
+      await page.setViewportSize({width:1440,height:900});
+      await page.locator('[data-action=lobby-game][data-game=rummy]').click();
+      await action(page,'return-table').click();
+      await action(page,'start-table').waitFor();
+    }
     await action(page,'start-table').click();
     await Promise.all(players.map(p=>p.page.locator('.game-room .hand').first().waitFor()));
     await measure(host,game,'desktop'); await measure(players[1],game,'mobile');
@@ -120,7 +143,7 @@ async function scenario(game) {
       await select(actor,s.hand[0].id);
       await clickMove(actor,r,move(actor.page,'analyze'));
       assert.ok((await read(actor,r)).state.analysis);
-      await select(actor,s.hand[0].id);
+      assert.equal(await actor.page.locator('[data-action=select-card][aria-pressed=true]').getAttribute('data-id'),s.hand[0].id,'analysis discarded the chosen discard');
       await clickMove(actor,r,move(actor.page,'discard'));
       actor=await getActor();await clickMove(actor,r,move(actor.page,'drop'));
       assert.equal((await read(host,r)).status,'finished');

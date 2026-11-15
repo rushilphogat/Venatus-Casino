@@ -758,3 +758,56 @@ test('casual Poker adds and replaces seats between hands without resetting stack
   r=await f.ok(`/api/tables/${r.id}/action`,a.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'cashout'}});assert.equal(r.status,'finished');assert.equal(Object.values(r.state.payouts).reduce((a,b)=>a+b,0),3000);
   assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM wallets').get()).n,0);
 });
+
+test('an overdue bot turn uses timeout rules instead of canceling the table',async t=>{
+  const f=await fixture(t,false),a=await f.account('Late timer host');
+  let r=await f.ok('/api/tables',a.cookie,{name:'Bot deadline',game:'chromatic',stake:0,bots:1});
+  await f.ok('/api/tables/'+r.id+'/start',a.cookie,{});
+  const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
+  stored.state.turn=stored.players.find(p=>p.bot).id;
+  stored.state.deadline=Date.now()-10;
+  stored.savedAt=Date.now()-2000;stored.botMovedAt=Date.now()-2000;
+  await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),r.id);
+  for(let i=0;i<30;i++){
+    r=await f.ok('/api/tables/'+r.id,a.cookie);
+    if(r.status!=='playing'||r.state.moves>stored.state.moves)break;
+    await new Promise(resolve=>setTimeout(resolve,30));
+  }
+  assert.equal(r.status,'playing');
+  assert.ok(r.state.moves>stored.state.moves);
+  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE target=? AND action='table-canceled'").get(r.id)).n,0);
+});
+
+test('pause time does not consume the match safety limit and lobby tracks the current seat',async t=>{
+  const f=await fixture(t,false),a=await f.account('Pause host');
+  let r=await f.ok('/api/tables',a.cookie,{name:'Paused match',game:'poker',stake:100,bots:1});
+  await f.ok('/api/tables/'+r.id+'/start',a.cookie,{});
+  await f.ok('/api/admin/table/'+r.id,f.owner.cookie,{operation:'pause'});
+  const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
+  stored.started=Date.now()-61*60000;stored.pausedAt=Date.now()-60*60000;
+  await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),r.id);
+  await f.ok('/api/admin/table/'+r.id,f.owner.cookie,{operation:'resume'});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  r=await f.ok('/api/tables/'+r.id,a.cookie);
+  assert.equal(r.status,'playing');
+  assert.equal((await f.ok('/api/lobby',a.cookie)).activeTable.id,r.id);
+  await f.ok('/api/tables/'+r.id+'/leave',a.cookie,{});
+  assert.equal((await f.ok('/api/lobby',a.cookie)).activeTable,null);
+});
+
+test('closing a completed event table preserves its result and standings',async t=>{
+  const f=await fixture(t,false),a=await f.account('Result host'),b=await f.account('Result friend');
+  const e=await f.ok('/api/admin/event',f.owner.cookie,{name:'Result retention',startingChips:1000,stakes:[100],games:['poker']});
+  await f.ok('/api/admin/event/'+e.id,f.owner.cookie,{status:'active'});
+  for(const p of [a,b])await f.ok('/api/events/'+e.id+'/join',p.cookie,{});
+  let r=await f.ok('/api/tables',a.cookie,{name:'Completed table',game:'poker',stake:100,context:e.id});
+  await f.ok('/api/tables/'+r.id+'/join',b.cookie,{});
+  r=await f.ok('/api/tables/'+r.id+'/start',a.cookie,{});
+  const actor=r.state.turn===a.id?a:b;
+  r=await f.ok('/api/tables/'+r.id+'/action',actor.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'fold'}});
+  r=await f.ok('/api/tables/'+r.id+'/action',a.cookie,{actionId:randomUUID(),expectedVersion:r.version,action:{type:'cashout'}});
+  const before=(await f.ok('/api/lobby?context='+e.id,a.cookie)).leaderboard;
+  await f.ok('/api/tables/'+r.id+'/manage',a.cookie,{operation:'close'});
+  assert.equal((await f.ok('/api/tables/'+r.id,a.cookie)).status,'finished');
+  assert.deepEqual((await f.ok('/api/lobby?context='+e.id,a.cookie)).leaderboard,before);
+});

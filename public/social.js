@@ -2,7 +2,6 @@ import { handTools, renderHand } from './experience.js';
 
 const colours = { ruby:'Ruby', emerald:'Emerald', sapphire:'Sapphire', gold:'Gold' };
 const colourName = key => colours[key] || 'Choose a colour';
-const actionName = { skip:'Skip', reverse:'Reverse', draw2:'Draw two', wild:'Wild', wilddraw4:'Wild draw four' };
 
 function colourChoices(game, action) {
   return `<fieldset class="colour-choices"><legend>Choose the colour</legend>${game.colors.filter(c => colours[c]).map(c =>
@@ -55,28 +54,28 @@ function bluffCenter(g, ui) {
 }
 
 function colorCenter(g, ui, canDraw) {
-  const top = g.topCard, value = actionName[top?.value] || top?.value || '';
+  const top = g.topCard;
   return `<div class="spectrum-center"><div class="deck-pair"><button type="button" class="spectrum-deck" data-action="draw-card" aria-label="Draw ${g.pendingPenalty || 'a'} card${g.pendingPenalty>1?'s':''}" ${canDraw?'':'disabled'}>${ui.card(null)}<span>Draw · ${g.drawCount}</span></button>
     <div class="spectrum-discard" data-pile>${ui.card(top)}<span>Discard</span></div></div>
-    <div class="colour-status"><small>Active colour</small><h3><i></i>${colourName(g.activeColor)}</h3>
+    <div class="colour-status"><h3><i></i>${colourName(g.activeColor)}</h3>
     <p><b class="play-direction" aria-hidden="true">${g.direction === -1 ? '↶':'↷'}</b>${g.direction === -1 ? 'Counterclockwise':'Clockwise'}</p>
-    ${g.pendingPenalty ? `<strong class="stack-tag">+${g.pendingPenalty} stacked</strong>` : `<span class="top-value">${ui.esc(value)}</span>`}</div></div>`;
+    ${g.pendingPenalty ? `<strong class="stack-tag">+${g.pendingPenalty} stacked</strong>` : ''}</div></div>`;
 }
 
 function turnInfo(room, ui) {
   const g = room.state, own = g.turn === ui.state.user.id;
-  if (room.status === 'paused') return ['Table paused','Play resumes when the host restarts the clock.'];
-  if (g.phase === 'finished') return [g.winner ? `${ui.name(g.winner)} wins` : 'Draw', room.practice ? 'Match complete' : `${ui.fmt(room.pot)} chips settled`];
+  if (room.status === 'paused') return ['Table paused',''];
+  if (g.phase === 'finished') return [g.winner ? `${ui.name(g.winner)} wins` : 'Draw', room.practice ? '' : `${ui.fmt(room.pot)} chips settled`];
   if (g.phase === 'round-end') return [`${ui.name(g.roundWinner)} wins round ${g.round}`, `+${g.roundPoints} points · first to ${g.targetScore}`];
   if (room.game==='bluff') {
-    if (g.phase==='challenge') return [g.lastPlay.player === ui.state.user.id ? 'Your claim is on the table' : 'Do you believe the claim?', 'Call before time runs out, or let it stand.'];
-    return [own?'Your declaration':`${ui.name(g.turn)} to declare`, g.requiredRank ? `Claim ${ui.esc(g.requiredRank)}${g.houseRules==='street'?' or skip':''}.` : 'Pick a rank and play one to four cards face-down.'];
+    if (g.phase==='challenge') return [g.lastPlay.player === ui.state.user.id ? 'Waiting for challenges' : 'Challenge this claim?', ''];
+    return [own?'Your turn':`${ui.name(g.turn)}’s turn`, own && !g.requiredRank ? 'Choose a rank and 1–4 cards.' : ''];
   }
   if (g.phase==='challenge') return [own?'Accept or challenge the +4':`${ui.name(g.turn)} has a decision`,ui.esc(g.message)];
   if (g.phase==='choose-color') return [own?'Choose the opening colour':`${ui.name(g.turn)} chooses a colour`,'Opening wild'];
   if (g.phase==='drawn') return [own?'Play your drawn card or pass':`${ui.name(g.turn)} drew a playable card`, ui.esc(g.message)];
   if (g.pendingPenalty) return [own?`Stack or draw ${g.pendingPenalty}`:`${ui.name(g.turn)} faces +${g.pendingPenalty}`,g.penaltyKind==='draw2'?'Play +2 or +4 to pass the stack.':'Only +4 continues this stack.'];
-  return [own?'Your move':`${ui.name(g.turn)} to play`,ui.esc(g.message)];
+  return [own?'Your turn':`${ui.name(g.turn)}’s turn`,''];
 }
 
 export function socialRoom(room, ui) {
@@ -91,10 +90,10 @@ export function socialRoom(room, ui) {
     <div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby">← Lobby</button><div class="eyebrow">${ui.gameName(room.game)} · ${room.practice?'Casual table':'Event table'}</div><h2>${ui.esc(room.name)}</h2></div>
     <div class="room-meta">${room.practice?'':`<span>Pot <b>${ui.fmt(room.pot)}</b></span>`}<button class="subtle" data-action="rules" data-game="${room.game}">Rules</button><button data-action="leave-table">Leave table</button></div></div>
     <section class="social-mat" aria-label="${ui.gameName(room.game)} table"><ul class="social-seats">${room.players.map(p => `<li data-seat="${ui.esc(p.id)}" class="${g.turn === p.id && !over ? 'seat-active':''}"><b>${name(p.id)}${p.id===viewer?' · You':''}</b><span>${p.left?'Autoplay · ':p.bot?'Bot · ':p.online===false && p.id!==viewer?'Offline · ':''}${g.counts[p.id]} cards${!bluff && g.scores?` · ${g.scores[p.id]} pts`:''}</span></li>`).join('')}</ul>
-    ${bluff?bluffCenter(g,h):colorCenter(g,h,own && g.phase==='play')}<div class="social-caption">${bluff?'Bluff':g.round?`Round ${g.round} · First to ${g.targetScore}`:'Chromatic'}</div></section>
-    <div class="social-turn" role="status"><div><strong>${lead}</strong><p>${detail}</p></div>${g.deadline && live ? `<span class="timer" data-deadline="${g.deadline}"></span>`:''}</div>
+    ${bluff?bluffCenter(g,h):colorCenter(g,h,own && g.phase==='play')}${!bluff&&g.round?`<div class="social-caption">Round ${g.round} · ${g.targetScore} points to win</div>`:''}</section>
+    <div class="social-turn" role="status"><div><strong>${lead}</strong>${detail?`<p>${detail}</p>`:''}</div>${g.deadline && live ? `<span class="timer" data-deadline="${g.deadline}"></span>`:''}</div>
     ${g.evidence?`<details><summary>View private challenge evidence</summary><p>${g.evidence.illegal?'A matching colour was held.':'The wild draw four was legal.'}</p><div class="revealed-cards">${g.evidence.cards.map(c=>ui.card(c)).join('')}</div></details>`:''}
-    <div class="social-hand-head"><span>Your hand · ${g.hand.length}</span>${bluff?`<details class="social-arrange" ${ui.arrangeOpen?'open':''}><summary>Arrange hand</summary>${handTools(room)}</details>`:''}</div>
+    <div class="social-hand-head"><span>Your hand · ${g.hand.length}</span>${bluff?`<details class="social-arrange" ${ui.arrangeOpen?'open':''}><summary>Arrange hand</summary>${handTools(room,ui.state.selected)}</details>`:''}</div>
     <div class="hand">${renderHand(room,ui.card,ui.esc,true,c=>!own || !['play','drawn'].includes(g.phase) || (!bluff && !legal(c)))}</div>
     <div class="game-actions social-actions">${controls}</div>
     ${ui.connection()}</main>${ui.footer()}`;

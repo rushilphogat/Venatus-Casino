@@ -7,9 +7,9 @@
 .game-chromatic.social-room {--table-edge:#34444f;--table-face:#172a33;--table-ink:#90d6cb}
 .social-room .room-top {margin-bottom:10px}
 .social-room .room-top .subtle {padding-left:0}
-.social-mat {position:relative;isolation:isolate;overflow:hidden;border:1px solid var(--table-edge);border-radius:22px;background:radial-gradient(ellipse at 50% 95%,var(--table-face),#16191c 86%);box-shadow:0 14px 38px #0003}
+.social-mat {position:relative;isolation:isolate;overflow:hidden;border:1px solid var(--table-edge);border-radius:8px;background:var(--table-face);box-shadow:none}
 .social-seats {margin:0;padding:10px 14px;list-style:none;display:flex;justify-content:center;gap:4px;background:#070b0c70;border-bottom:1px solid #dbd0ad24}
-.social-seats li {min-width:0;max-width:180px;flex:1;display:grid;gap:3px;padding:6px 9px;border:1px solid transparent;border-radius:8px}
+.social-seats li {min-width:0;max-width:180px;flex:1;display:grid;gap:3px;padding:6px 9px;border:1px solid transparent;border-radius:3px}
 .social-seats li b {overflow-wrap:anywhere;font-size:.88rem;line-height:1.16}
 .social-seats li span {color:#c2bdb0;font-size:.72rem;line-height:1.2}
 .social-seats .seat-active {background:#fff9da0a;border-color:var(--table-ink);box-shadow:inset 3px 0 var(--table-ink)}
@@ -41,7 +41,7 @@
 .colour-status i,.colour-choice i {display:inline-block;width:.65em;height:.65em;border-radius:50%;background:var(--hue,#abb4b1);box-shadow:inset 0 0 0 1px #fff4}
 .colour-status .play-direction {display:inline-block;font:1.6rem/1 system-ui;vertical-align:-.12em;margin-right:5px}
 .colour-status .top-value,.stack-tag {display:inline-block;margin-top:8px;font-size:.8rem}
-.stack-tag {border:1px solid #f2b89988;padding:3px 8px;border-radius:20px;color:#ffd5ae}
+.stack-tag {border:1px solid #f2b89988;padding:3px 8px;border-radius:3px;color:#ffd5ae}
 .social-room.game-chromatic .color-red {background:#a63046}.social-room.game-chromatic .color-green {background:#13694d}
 .social-room.game-chromatic .color-blue {background:#245b91}.social-room.game-chromatic .color-yellow {background:#f0bf57;color:#271a0e}
 .social-room.game-chromatic .color-wild {background:conic-gradient(from -35deg at 50% 50%,#a63046 25%,#13694d 0 50%,#245b91 0 75%,#845615 0)}
@@ -77,3 +77,14 @@
 }
 @media(max-width:380px){.deck-pair {gap:6px}.deck-pair .playing-card {width:51px;height:75px}.spectrum-center {gap:12px}}
 @media(prefers-reduced-motion:reduce){.social-room *,.social-room *::after{scroll-behavior:auto!important;transition-duration:0s!important;animation-duration:0s!important}}
+
+.social-room {--table-face:#29252a;--table-edge:#53464d;--table-ink:#d6b3b4;}
+.game-chromatic.social-room {--table-face:#182a31;--table-edge:#3b4c53;--table-ink:#9bc9c4;}
+.social-room .social-turn {min-height:44px;padding:10px 0;}
+.social-room .social-turn strong {font-size:14px;}
+.social-room .social-actions {border-radius:4px;}
+.social-room .social-caption {padding:0 10px 10px;color:#aebdbb;letter-spacing:0;}
+.social-room .social-hand-head {font-size:12px;letter-spacing:0;}
+.social-room .social-hand-head details {font-size:12px;}
+.social-room .social-hand-head .hand-tools {padding-top:8px;}
+.social-room .social-arrange .arrange-hint {display:inline;width:auto;}

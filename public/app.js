@@ -3,7 +3,7 @@ import { specialRoom, animateSpecialTransition, specialTransitionSound, installS
 import { socialRoom, socialTransition, animateSocialTransition, updateSocialSelection } from '/social.js';
 const app = document.querySelector('#app');
 const modal = document.querySelector('#modal');
-const state = { user: null, setupRequired: false, context: 'casual', page: 'lobby', roomId: null, room: null, lobby: null, admin: null, selected: new Set(), connected: false, authMode: 'guest', busy: false };
+const state = { user: null, setupRequired: false, context: 'casual', page: 'lobby', roomId: null, room: null, lobby: null, admin: null, selected: new Set(), connected: false, authMode: 'guest', busy: false, lobbyGame: 'poker' };
 let pendingInvite = new URLSearchParams(location.search).get('join') || '';
 if (!/^[A-F0-9]{12}$/i.test(pendingInvite)) pendingInvite = '';
 let audioPrefs = { muted: false, volume: .3 };
@@ -93,34 +93,77 @@ function card(c, interactive = false, disabled = false) {
 }
 function brand() { return '<div class="brand"><img src="/logo.png" alt="Venatus logo"><div><strong>VENATUS</strong><span>CASINO</span></div></div>'; }
 function header() {
-  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Play games</button><button data-action="events">Casino events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Your activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><div class="avatar">${esc(initials(state.user.name))}</div><span class="account-name small">${esc(state.user.name)}</span>${state.user.role==='guest'?'<button class="subtle" data-action="save-guest">Save account</button>':''}<button class="subtle" data-action="logout">${state.user.role==='guest'?'Exit guest':'Sign out'}</button></div>` : '<span class="badge">The private card room</span>'}</header>`;
+  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Card room</button><button data-action="events">Events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><div class="avatar">${esc(initials(state.user.name))}</div><span class="account-name small">${esc(state.user.name)}</span>${state.user.role==='guest'?'<button class="subtle" data-action="save-guest">Save account</button>':''}<button class="subtle" data-action="logout">${state.user.role==='guest'?'Exit guest':'Sign out'}</button></div>` : ''}</header>`;
 }
 function footer() {
-  return `<footer class="footer"><span>VENATUS CASINO &nbsp; · &nbsp; Play for the pleasure of the game.</span><span>Free virtual chips. No purchases, transfers or cash value.</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${audioPrefs.muted ? 'Unmute' : 'Mute'} sound">Sound ${audioPrefs.muted ? 'off' : 'on'}</button><input id="sound-volume" type="range" min="0" max="1" step="0.05" value="${audioPrefs.volume}" aria-label="Sound volume"></div>` : ''}</footer>`;
+  return `<footer class="footer"><span>Venatus · Virtual chips</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${audioPrefs.muted?'Unmute':'Mute'} sound">Sound ${audioPrefs.muted?'off':'on'}</button><input id="sound-volume" type="range" min="0" max="1" step="0.05" value="${audioPrefs.volume}" aria-label="Sound volume"></div>` : ''}</footer>`;
 }
 function renderAuth() {
   const mode = state.authMode;
   const guest = mode === 'guest';
   const invite = Boolean(pendingInvite);
-  const guestForm = `<label>Nickname <small>(optional)</small><input name="name" autocomplete="nickname" maxlength="16" placeholder="What should friends call you?"></label>`;
+  const guestForm = `<label><span>Nickname <small>(optional)</small></span><input name="name" autocomplete="nickname" maxlength="16" placeholder="What should friends call you?"></label>`;
   const credentials = `<label>Player name<input name="name" autocomplete="username" minlength="3" maxlength="24" required></label><label>Password<input name="password" type="password" autocomplete="${mode==='login'?'current-password':'new-password'}" minlength="${mode==='login'?1:12}" maxlength="128" required></label>`;
   const primary = guest ? (invite ? 'Join table as guest' : 'Play as guest') : mode==='register' ? 'Create account' : mode==='setup' ? 'Create owner account' : 'Sign in';
-  app.innerHTML = `${header()}<main class="auth-layout"><section class="auth-story"><div class="eyebrow">Venatus card room</div><h1>${invite?'Your seat is<br><em class="gold">waiting.</em>':'Cards on<br>the <em class="gold">table.</em>'}</h1><p>Poker, Rummy, Oh Hell, Bluff and Chromatic. Open a table or join your friends for a hand.</p><div class="mini-cards" aria-hidden="true">${card({rank:'A',suit:'S'})}${card({rank:'K',suit:'H'})}${card(null)}</div></section><section class="auth-card"><div class="auth-tabs" aria-label="Entry options">${[['guest','Guest'],['login','Sign in'],['register','Register']].map(([value,label])=>`<button data-action="auth-mode" data-mode="${value}" class="${mode===value?'active':''}" aria-pressed="${mode===value}">${label}</button>`).join('')}</div><h2>${guest ? invite?'Join your friends':'Take a seat' : mode==='login'?'Welcome back':mode==='register'?'Create your account':'Owner setup'}</h2><p class="small">${guest?'Your guest seat is saved in this browser for seven days.':mode==='login'?'Players and owners can use their existing account.':mode==='register'?'Keep your player identity across devices.':'Enter the setup token from your server configuration.'}</p><form id="auth-form" class="stack">${guest?guestForm:credentials}${mode==='setup'?'<label>Owner setup token<input name="token" type="password" required autocomplete="off"></label>':''}<p class="form-error" role="alert"></p><button class="primary" type="submit">${primary}</button></form>${state.setupRequired&&mode!=='setup'?'<button class="subtle small" data-action="auth-mode" data-mode="setup">Owner setup</button>':''}</section></main>`;
+  app.innerHTML = `${header()}<main class="entry"><section class="entry-form">
+    <h1>${guest ? invite?'Join table':'Play as guest' : mode==='login'?'Sign in':mode==='register'?'Create account':'Owner setup'}</h1>
+    <div class="auth-tabs" aria-label="Entry options">${[['guest','Guest'],['login','Sign in'],['register','Register']].map(([value,label])=>`<button data-action="auth-mode" data-mode="${value}" class="${mode===value?'active':''}" aria-pressed="${mode===value}">${label}</button>`).join('')}</div>
+    <form id="auth-form" class="stack">${guest?guestForm:credentials}
+      ${mode==='setup'?'<label>Owner setup token<input name="token" type="password" required autocomplete="off"></label>':''}
+      <p class="form-error" role="alert"></p><button class="primary" type="submit">${primary}</button>
+    </form>
+    <p class="entry-note">${guest?'Guest access lasts seven days in this browser. Save an account later to keep your progress.':mode==='register'?'Use at least 12 characters for your password.':mode==='setup'?'Use the token in your server configuration.':''}</p>
+    ${state.setupRequired&&mode!=='setup'?'<button class="subtle small" data-action="auth-mode" data-mode="setup">Owner setup</button>':''}
+  </section></main>${footer()}`;
 }
-function connection() { return `<span class="connection ${state.connected ? '' : 'disconnected'}"><i class="dot"></i>${state.connected ? 'Live connection' : 'Reconnecting'}</span>`; }
-function gameTile(game, title, sub, description) {
-  const event = state.lobby?.events?.find(e => e.id === state.context);
-  const enabled = state.lobby?.settings?.[game] !== false && !state.lobby?.settings?.maintenance && (!event || (event.status === 'active' && event.games.includes(game) && state.lobby.participating));
-  return `<article class="game-card"><div class="game-copy"><div class="eyebrow">${sub}</div><h2>${title}</h2><p>${description}</p><div class="row"><button class="primary" data-action="create-table" data-game="${game}" ${enabled ? '' : 'disabled'}>${enabled ? 'Create a table' : 'Temporarily closed'} &nbsp; ↗</button><button class="subtle" data-action="rules" data-game="${game}">The rules</button></div></div><div class="game-art ${game === 'chromatic' ? 'chromatic-art' : ''}" aria-hidden="true">${game !== 'chromatic' ? card({ rank: 'A', suit: 'S' }) + card({ rank: 'Q', suit: 'H' }) : card({ color: 'red', value: '7' }) + card({ color: 'green', value: 'wild' })}</div></article>`;
+function connection() { return `<span class="connection ${state.connected ? '' : 'disconnected'}"><i class="dot"></i>${state.connected ? 'Connected' : 'Reconnecting'}</span>`; }
+const gameCatalog = [
+  {id:'poker',name:'Poker',variant:'No-limit Hold’em',seats:'2–6'},
+  {id:'chromatic',name:'Chromatic',variant:'Street UNO',seats:'2–6'},
+  {id:'rummy',name:'Rummy',variant:'13-card Indian Rummy',seats:'2–6'},
+  {id:'bluff',name:'Bluff',variant:'Same-rank street rules',seats:'3–6'},
+  {id:'ohhell',name:'Oh Hell',variant:'Trick-taking',seats:'3–6'}
+];
+function availableStakes(game, event) {
+  const minimum=game==='poker'?10:0;
+  return event?.stakes?.filter(value=>value>=minimum) || [];
+}
+function tableRow(table) {
+  const own=table.players?.some(p=>p.id===state.user.id && !p.left);
+  const left=table.players?.some(p=>p.id===state.user.id && p.left);
+  const count=table.players?.length||0, capacity=table.capacity||6;
+  const status=table.status==='paused'?'Paused':table.joinable?'Open':table.status==='finished'?'Finished':count>=capacity?'Full':'In play';
+  return `<tr><td><strong>${esc(table.name)}</strong>${table.private?'<small>Private table</small>':''}</td>
+    <td><span class="table-status ${table.joinable?'is-open':''}">${status}</span></td>
+    <td>${count}<span class="muted"> / ${capacity}</span></td><td class="number">${table.practice && table.game!=='poker'?'—':fmt(table.stake)}</td>
+    <td><button data-action="join-table" data-id="${esc(table.id)}" ${left || !own && !table.joinable?'disabled':''}>${own?'Return':table.joinable?'Join':'In progress'}</button></td></tr>`;
 }
 function renderLobby() {
-  const data = state.lobby;
-  if (!data) return;
-  const events = data.events || [];
-  const activeEvent = events.find(e => e.id === state.context);
-  const tables = (data.tables || []).filter(t => ['waiting','playing','paused'].includes(t.status)||t.practice&&t.status==='finished');
-  const wallet = data.wallet || {};
-  app.innerHTML = `${header()}<main class="layout"><section class="hero"><div><div class="eyebrow">Welcome to the club, ${esc(state.user.name)}</div><h1>The evening is <em class="gold">yours.</em></h1><p>A well-played hand. A beautifully told bluff.<br>Find your table and settle in.</p></div>${activeEvent ? `<aside class="wallet"><div class="eyebrow">${esc(activeEvent?.name || 'Event wallet')}</div><div class="balance number">${fmt(wallet.available)} <span class="small">CHIPS</span></div><div class="wallet-bottom"><span>Available to play</span><span>${fmt(wallet.reserved)} reserved</span></div></aside>` : '<aside class="wallet"><div class="eyebrow">CASUAL PLAY</div><h2>Your friends. Your table.</h2><p>No wallet required. Play with table chips and invite friends or add bots.</p></aside>'}</section>${data.settings?.announcement ? `<div class="panel small" style="margin-bottom:22px;padding:15px 20px">${esc(data.settings.announcement)}</div>` : ''}<section class="context-bar"><label class="hidden" for="context">Gaming context</label><select id="context"><option value="casual">Casual card room</option>${events.map(e => `<option value="${esc(e.id)}" ${e.id === state.context ? 'selected' : ''}>${esc(e.name)} · ${esc(e.status)}</option>`).join('')}</select>${state.context !== 'casual' ? `<button data-action="join-event" ${data.participating || activeEvent?.registrationOpen===false || !['registration','active'].includes(activeEvent?.status) ? 'disabled' : ''}>${data.participating ? 'Registered' : ['registration','active'].includes(activeEvent?.status) ? 'Join event' : 'Registration closed'}</button><span class="small muted">${esc(activeEvent?.status || '')}</span>` : '<span class="small muted">Your everyday escape.</span>'}<div class="right">${connection()}</div></section><section class="game-grid">${gameTile('bluff', 'The art of the bluff.', 'Bluff · 3–6 players', 'Keep a straight face. Shed your cards. Decide who deserves the benefit of the doubt.')}${gameTile('chromatic', 'Follow your colour.', 'Chromatic · Street UNO rules', 'Stack +2 and +4. Call your last card. Race to 500 points.')}${gameTile('poker','Play the player.','Texas Hold’em · 2–6 players','No-limit betting, community cards, and every chip on the line.')}${gameTile('ohhell','Call it precisely.','Oh Hell · 3–6 players','Bid your tricks. Follow suit. Make every prediction count.')}${gameTile('rummy','Find your sequence.','Indian Rummy · 2–6 players','Thirteen cards. Pure sequences, clever sets, and a perfect declaration.')}</section><div class="lower-grid"><section><div class="section-head"><h2>Find your company</h2><button class="subtle" data-action="join-code">Join with a code ↗</button></div>${tables.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Table / Game</th><th>Table stakes</th><th>Seats</th><th></th></tr></thead><tbody>${tables.map(t => `<tr><td><strong>${esc(t.name)}</strong><small>${gameName(t.game)} · ${esc(t.status)}${t.practice?' · Casual':''}</small></td><td class="number gold">${t.practice && t.game!=='poker' ? 'Scoring only' : fmt(t.stake)}</td><td>${t.players?.length || 0} / ${t.capacity||6}</td><td><button data-action="join-table" data-id="${esc(t.id)}" ${t.players?.some(p => p.id === state.user.id && p.left) || (!t.joinable && !t.players?.some(p => p.id === state.user.id)) ? 'disabled' : ''}>${t.players?.some(p => p.id === state.user.id) ? 'Return' : 'Take a seat'}</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>Be the first at the table.</h3><p>Create a room above and invite your friends. Your next great hand starts with good company.</p><span class="badge">Friends or practice bots</span></div>'}</section>${activeEvent ? `<aside class="ranking"><div class="section-head"><h2>The leaderboard</h2><span class="badge">${state.context === 'casual' ? 'Casual' : activeEvent?.status==='completed'?'Final results':'Live event'}</span></div>${(data.leaderboard || []).map((p, i) => `<div class="rank-row"><span class="rank-no">${String(i + 1).padStart(2, '0')}</span><div>${esc(p.name)}<small>${fmt(p.wins)} wins · ${fmt(p.gamesPlayed)} games · ${p.profit>=0?'+':''}${fmt(p.profit)} chips</small></div><span class="rank-value">${fmt(p.balance)}</span></div>`).join('') || '<p class="small">The first chapter is still to be written.</p>'}<p class="small muted" style="font-size:9px;margin:20px 0 0">Available and reserved chips. Each event has its own standings.</p></aside>` : '<aside class="ranking"><h2>Host a game anytime</h2><p>Create a table, share its link, and fill empty seats with bots. Table chips stay at that table.</p><button data-action="events">Explore casino events →</button></aside>'}</div></main>${footer()}`;
+  const data=state.lobby;if(!data)return;
+  const events=data.events||[], event=events.find(e=>e.id===state.context);
+  const game=gameCatalog.find(g=>g.id===state.lobbyGame)||gameCatalog[0];
+  const tables=(data.tables||[]).filter(t=>t.game===game.id && (['waiting','playing','paused'].includes(t.status)||t.practice&&t.status==='finished'));
+  const settings=data.settings||{};
+  const configured=settings[game.id]!==false && !settings.maintenance;
+  const stakeAllowed=!event || (event.minStake!==undefined ? event.maxStake>=(game.id==='poker'?10:0) : availableStakes(game.id,event).length>0);
+  const enabled=configured && stakeAllowed && (!event || event.status==='active' && event.games.includes(game.id) && data.participating);
+  const reason=!configured?'Unavailable':!stakeAllowed?'Stake unavailable':event&&!event.games.includes(game.id)?'Outside event':event&&event.status!=='active'?'Event '+event.status:event&&!data.participating?'Join event to play':'';
+  app.innerHTML=`${header()}<main class="layout cardroom">
+    <div class="lobby-heading"><h1>${event?esc(event.name):'Card room'}</h1><div class="lobby-tools">
+      <label class="sr-only" for="context">Playing mode</label><select id="context"><option value="casual">Casual play</option>${events.map(e=>`<option value="${esc(e.id)}" ${e.id===state.context?'selected':''}>${esc(e.name)}</option>`).join('')}</select>
+      <button data-action="join-code">Join by code</button></div></div>
+    ${settings.announcement?`<p class="announcement" role="status">${esc(settings.announcement)}</p>`:''}
+    ${data.activeTable && !tables.some(t=>t.id===data.activeTable.id)?`<div class="return-strip"><span>At <strong>${esc(data.activeTable.name)}</strong> · ${gameName(data.activeTable.game)}</span><button data-action="return-table" data-id="${esc(data.activeTable.id)}">Return to table</button></div>`:''}
+    ${event?`<div class="event-wallet"><div><strong>${fmt(data.wallet?.available)} chips</strong><span>${fmt(data.wallet?.reserved)} in play</span></div><span>${esc(event.status)}</span>${!data.participating?`<button class="primary" data-action="join-event" ${event.registrationOpen===false || !['registration','active'].includes(event.status)?'disabled':''}>Join event</button>`:''}</div>`:''}
+    <nav class="game-picker" aria-label="Select game">${gameCatalog.map(g=>`<button data-action="lobby-game" data-game="${g.id}" aria-pressed="${g.id===game.id}" class="${g.id===game.id?'selected':''}">${g.name}</button>`).join('')}</nav>
+    <div class="lobby-columns ${event?'with-standings':''}"><section class="table-browser" aria-label="${game.name} tables">
+      <div class="table-browser-head"><div><h2>${game.name}</h2><p>${game.variant} · ${game.seats} players</p></div>
+        <div class="table-tools"><button class="subtle" data-action="rules" data-game="${game.id}">Rules</button><button class="primary" data-action="create-table" data-game="${game.id}" ${enabled?'':'disabled'}>Create table</button></div></div>
+      ${reason?`<p class="availability" role="status">${reason}</p>`:''}
+      ${tables.length?`<div class="table-wrap"><table class="data-table live-tables"><thead><tr><th>Table</th><th>Status</th><th>Seats</th><th>${game.id==='poker'?'Buy-in':'Stake'}</th><th><span class="sr-only">Join table</span></th></tr></thead><tbody>${tables.map(tableRow).join('')}</tbody></table></div>`:'<div class="tables-empty"><p>No tables yet.</p><span>Create one to invite friends or play with bots.</span></div>'}
+    </section>${event?`<aside class="standings"><h2>Standings</h2>${(data.leaderboard||[]).map((p,i)=>`<div class="standing-row"><span>${i+1}</span><strong>${esc(p.name)}</strong><span class="number">${fmt(p.balance)}</span></div>`).join('')||'<p>Results appear after players join.</p>'}</aside>`:''}</div>
+    <div class="lobby-connection">${connection()}</div>
+  </main>${footer()}`;
 }
 function playerName(id) { return state.room?.players?.find(p => p.id === id)?.name || 'Player'; }
 function chromaticScore(g) {
@@ -140,16 +183,30 @@ function chromaticControls(g, playable) {
   return controls;
 }
 function hostControls(room) {
-  if(room.host!==state.user.id) return '';
-  return `<div class="row wrap host-controls">${room.code?'<button data-action="copy-link">Copy invite link</button>':''}${room.practice?`<label>Bot level<select id="host-bot-difficulty"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select></label><button data-action="host-operation" data-operation="add-bot" ${room.players.length>=(room.capacity||6)?'disabled':''}>Add bot</button><button data-action="host-operation" data-operation="fill-bots" ${room.players.length>=(room.capacity||6)?'disabled':''}>Fill empty seats</button>${room.players.filter(p=>p.bot).map(p=>`<button data-action="host-operation" data-operation="remove-bot" data-id="${esc(p.id)}">Remove ${esc(p.name)}</button>`).join('')}`:''}<button class="subtle" data-action="close-table">Close table</button></div>`;
+  if(room.host!==state.user.id)return '';
+  return `<div class="host-controls">${room.state&&room.code?'<button data-action="copy-link">Copy invite</button>':''}
+    ${room.practice?`<div class="host-bots"><label class="sr-only" for="host-bot-difficulty">Bot difficulty</label><select id="host-bot-difficulty">${['easy','medium','hard'].map(level=>`<option value="${level}" ${level===(room.botDifficulty||'medium')?'selected':''}>${level[0].toUpperCase()+level.slice(1)} bots</option>`).join('')}</select>
+    <button data-action="host-operation" data-operation="add-bot" ${room.players.length>=(room.capacity||6)?'disabled':''}>Add bot</button>
+    <button data-action="host-operation" data-operation="fill-bots" ${room.players.length>=(room.capacity||6)?'disabled':''}>Fill seats</button></div>`:''}
+    <button class="subtle" data-action="close-table">Close table</button></div>`;
+}
+function waitingRoom(room) {
+  const min=['bluff','ohhell'].includes(room.game)?3:2, host=room.host===state.user.id;
+  return `${header()}<main class="layout waiting-room"><div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby">← Lobby</button><h1>${esc(room.name)}</h1><p>${gameName(room.game)}${room.game==='poker'?' · '+fmt(room.stake)+' chips':''}</p></div><button data-action="leave-table">Leave table</button></div>
+    <div class="waiting-columns"><section><div class="section-head"><h2>Players</h2><span>${room.players.length} / ${room.capacity||6}</span></div>
+    <ul class="player-roster">${room.players.map(p=>`<li><span class="avatar">${esc(initials(p.name))}</span><strong>${esc(p.name)}</strong><span>${p.id===room.host?'Host':p.bot?'Bot':p.online===false?'Offline':'Ready'}</span>${host&&p.bot?`<button class="subtle" data-action="host-operation" data-operation="remove-bot" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">Remove</button>`:''}</li>`).join('')}</ul>${hostControls(room)}</section>
+    <aside class="invite-controls"><h2>Invite players</h2><button class="primary" data-action="copy-link">Copy invite link</button><div class="invite-code"><span class="room-code">${esc(room.code)}</span><button class="subtle" data-action="copy-code">Copy code</button></div>
+    <div class="start-controls">${host?`<button class="primary" data-action="start-table" ${room.players.length<min?'disabled':''}>Deal the cards</button>${room.players.length<min?`<p>Add ${min-room.players.length} more player${min-room.players.length===1?'':'s'} to start.</p>`:''}`:'<p>Waiting for the host to deal.</p>'}</div></aside></div>${connection()}</main>${footer()}`;
 }
 function renderRoom() {
   const room = state.room; if (!room) return;
-  state.selected=new Set([...state.selected].filter(id=>room.state?.hand?.some(c=>c.id===id)));
+  state.selected=new Set([...state.selected].filter(id=>room.state?.hand?.some(c=>c.id===id) &&
+    (!['chromatic','ohhell'].includes(room.game) || !room.state.legalCardIds || room.state.legalCardIds.includes(id))));
   if (room.status === 'canceled') {
     app.innerHTML = `${header()}<main class="layout"><div class="eyebrow">Table closed</div><h1>${esc(room.name)}</h1><p>${room.practice?'This casual table is closed. No wallet chips were used.':'The match was canceled. Your chips have been returned to your wallet; completed poker hands retain their results.'}</p><button class="primary" data-action="navigate" data-page="lobby">Return to the casino</button></main>${footer()}`;
     return;
   }
+  if(!room.state && room.status==='waiting') {app.innerHTML=waitingRoom(room);return;}
   if (room.state && (room.game==='bluff' || room.game==='chromatic' && room.state.rulesVersion===2)) {
     const arrangeOpen = Boolean(document.querySelector('.social-arrange')?.open);
     app.innerHTML=socialRoom(room,{state,card,esc,fmt,header,footer,connection,gameName,claimRank,arrangeOpen});
@@ -170,20 +227,51 @@ function renderRoom() {
 }
 function renderEvents() {
   const events=state.lobby?.events||[];
-  app.innerHTML=`${header()}<main class="layout"><div class="eyebrow">COMPETE TOGETHER</div><h1>Casino events</h1><p>Each event has its own chips, tables and standings. Casual games are always separate.</p>${[['Live',['active','paused']],['Upcoming',['registration','draft']],['Results',['completed','canceled','archived']]].map(([title,statuses])=>`<section><h2>${title}</h2><div class="game-grid">${events.filter(e=>statuses.includes(e.status)).map(e=>`<article class="panel"><span class="badge">${esc(e.status)}</span><h2>${esc(e.name)}</h2><p>${e.startsAt?esc(new Date(e.startsAt).toLocaleString()):'Host-managed schedule'}${e.endsAt?' — '+esc(new Date(e.endsAt).toLocaleString()):''}</p><p>${fmt(e.startingChips)} starting event chips · ${e.participants||0} registered</p><p>${esc(e.description||'')}</p><p>${e.games.map(gameName).join(' · ')}</p><button data-action="open-event" data-id="${esc(e.id)}">${statuses.includes('completed')?'View results':'Open event'}</button></article>`).join('')||'<p class="small">No events in this section yet.</p>'}</div></section>`).join('')}</main>${footer()}`;
+  app.innerHTML=`${header()}<main class="layout event-index"><h1>Casino events</h1>${events.length?events.map(e=>`<article class="event-row"><div><h2>${esc(e.name)}</h2><p>${e.startsAt?esc(new Date(e.startsAt).toLocaleString()):'Host starts the event'} · ${e.participants||0} players</p>${e.description?`<p>${esc(e.description)}</p>`:''}</div><span>${esc(e.status)}</span><button data-action="open-event" data-id="${esc(e.id)}">${['completed','canceled','archived'].includes(e.status)?'Results':'Open'}</button></article>`).join(''):'<p class="tables-empty">No events scheduled.</p>'}</main>${footer()}`;
 }
 function renderHistory() {
-  const history = state.lobby?.history || [];
-  app.innerHTML = `${header()}<main class="layout history"><div class="eyebrow">Your time at the tables</div><h1>Every hand has a story.</h1><p class="small">Your recent matches in this gaming context.</p>${history.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Game / Table</th><th>Result</th><th>Chips</th><th>Played</th></tr></thead><tbody>${history.map(h => `<tr><td>${esc(h.name || gameName(h.game))}<small>${esc(h.game || '')}</small></td><td>${esc(h.status === 'canceled' ? 'Refunded' : h.state?.winner === state.user.id ? 'Won' : h.state?.winner ? 'Lost' : 'Draw')}</td><td class="number gold">${fmt(h.payout ?? (h.state?.winner === state.user.id ? h.pot : !h.state?.winner ? h.stake : 0))}</td><td>${h.finished ? esc(new Date(h.finished).toLocaleDateString()) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>Your story starts at the table.</h3><p>Completed matches will appear here.</p><button class="primary" data-action="navigate" data-page="lobby">Find a game</button></div>'}</main>${footer()}`;
+  const history=state.lobby?.history||[];
+  app.innerHTML=`${header()}<main class="layout history"><h1>Your activity</h1>${history.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Table</th><th>Result</th><th>Chips</th><th>Date</th></tr></thead><tbody>${history.map(h=>`<tr><td>${esc(h.name)}<small>${gameName(h.game)}</small></td><td>${h.status==='canceled'?'Closed':h.state?.winner===state.user.id?'Won':h.state?.winner?'Lost':'Finished'}</td><td class="number">${h.practice?'—':fmt(h.payout)}</td><td>${h.finished?esc(new Date(h.finished).toLocaleDateString()):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="tables-empty">No completed games yet.</p>'}</main>${footer()}`;
 }
 function renderAdmin() {
   const data = state.admin; if (!data) return;
   const stats = data.stats || {}, settings = data.settings || {};
   const owner = state.user.role === 'superadmin';
-  app.innerHTML = `${header()}<main class="layout"><div class="section-head"><div><div class="eyebrow">${owner ? 'Super Admin' : 'Moderation'} · Control room</div><h2>The house, in order.</h2></div><button data-action="refresh-admin">Refresh dashboard</button><a href="/api/admin/export?context=${encodeURIComponent(state.context)}">Export results ↗</a></div><div class="stat-grid">${[['Registered players', stats.users], ['Players online', stats.online], ['Active tables', stats.tables], ['Completed matches', stats.matches]].map(([label, value]) => `<div class="stat"><div class="value number">${fmt(value)}</div><div class="label">${label}</div></div>`).join('')}</div><div class="admin-grid"><section class="panel"><h2>Create an occasion</h2>${owner ? '<form id="event-form" class="stack event-form"><label class="full-width">Event name<input name="name" required maxlength="80" placeholder="Friday at the card room"></label><label>Starting chips<input name="startingChips" type="number" min="100" max="1000000" step="1" value="10000" required></label><label>Stake presets (comma separated)<input name="stakes" value="100,250,500" required></label><label>Minimum stake<input name="minStake" type="number" min="0" max="100000" placeholder="Use presets only"></label><label>Maximum stake<input name="maxStake" type="number" min="0" max="100000" placeholder="Use presets only"></label><label class="full-width">Description<input name="description" maxlength="1000" placeholder="Tell players about the event"></label><label>Participant limit (optional)<input name="participantLimit" type="number" min="2" max="10000" placeholder="Unlimited"></label><label>Automatic start (local time)<input name="startsAt" type="datetime-local"></label><label>Automatic end (local time)<input name="endsAt" type="datetime-local"></label><p class="small full-width">Open registration to arm the schedule. Keep the local server running; overdue transitions are applied when it restarts. Blank times use manual controls.</p><label class="check"><input type="checkbox" name="bluff" checked> Bluff</label><label class="check"><input type="checkbox" name="chromatic" checked> Chromatic</label><label class="check"><input type="checkbox" name="poker" checked> Poker</label><label class="check"><input type="checkbox" name="ohhell" checked> Oh Hell</label><label class="check"><input type="checkbox" name="rummy" checked> Rummy</label><p class="form-error full-width" role="alert"></p><button class="primary full-width">Create event</button></form>' : '<p class="small">Event creation is managed by the owner.</p>'}</section><section class="panel"><h2>House settings</h2>${owner ? `<form id="settings-form" class="stack"><label>Starting casual chips<input name="startingChips" type="number" min="100" max="1000000" value="${Number(settings.startingChips) || 10000}" required></label><label class="check"><input type="checkbox" name="bluff" ${settings.bluff !== false ? 'checked' : ''}> Open Bluff tables</label><label class="check"><input type="checkbox" name="chromatic" ${settings.chromatic !== false ? 'checked' : ''}> Open Chromatic tables</label>${['poker','ohhell','rummy'].map(g=>`<label class="check"><input type="checkbox" name="${g}" ${settings[g] !== false ? 'checked' : ''}> Open ${gameName(g)} tables</label>`).join('')}<label>Lobby announcement<input name="announcement" maxlength="400" value="${esc(settings.announcement || '')}" placeholder="A message for the club"></label><label class="check"><input type="checkbox" name="maintenance" ${settings.maintenance ? 'checked' : ''}> Maintenance mode</label><p class="form-error" role="alert"></p><button>Save house settings</button></form>` : '<p class="small">House settings are managed by the owner.</p>'}</section></div><section class="panel admin-wide"><h2>Events</h2>${(data.events || []).map(e => `<div class="admin-event"><div>${esc(e.name)}<p class="small" style="margin:5px 0 0">${fmt(e.startingChips)} starting chips · ${esc(e.status)} · ${e.participants || 0}${e.participantLimit ? " / " + e.participantLimit : ""} participants</p><p class="small">${e.startsAt ? "Starts " + esc(new Date(e.startsAt).toLocaleString()) : "Manual start"} · ${e.endsAt ? "Ends " + esc(new Date(e.endsAt).toLocaleString()) : "Manual end"}</p></div>${owner ? `<button data-action="configure-event" data-id="${esc(e.id)}" ${['completed','canceled','archived'].includes(e.status)?'disabled':''}>Schedule & registration</button><select class="event-status" data-id="${esc(e.id)}" aria-label="Status of ${esc(e.name)}">${[e.status,...(eventTransitions[e.status] || [])].map(s => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}</select>` : ''}</div>`).join('') || '<p class="small">No events yet. Casual games remain available independently.</p>'}</section><section class="panel admin-wide"><div class="section-head"><h2>Players</h2><input id="player-search" placeholder="Find a player" aria-label="Find a player" style="max-width:240px"></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Player</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>${(data.users || []).map(u => `<tr data-player-name="${esc(u.name.toLowerCase())}"><td>${esc(u.name)}</td><td>${esc(u.role)}</td><td>${u.banned ? 'Banned' : 'Active'}</td><td><button data-action="manage-player" data-id="${esc(u.id)}" ${u.role === 'superadmin' ? 'disabled' : ''}>Manage</button></td></tr>`).join('')}</tbody></table></div></section><section class="panel admin-wide"><h2>Tables</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>Table</th><th>Game</th><th>Status</th><th>Actions</th></tr></thead><tbody>${(data.tables || []).filter(t => ['waiting','playing','paused'].includes(t.status)||t.practice&&t.status==='finished').map(t => `<tr><td>${esc(t.name)}</td><td>${gameName(t.game)}</td><td>${esc(t.status)}</td><td><div class="row"><button data-action="admin-table" data-id="${esc(t.id)}" data-operation="${t.status === 'paused' ? 'resume' : 'pause'}" ${t.status === 'waiting' ? 'disabled' : ''}>${t.status === 'paused' ? 'Resume' : 'Pause'}</button><button class="danger" data-action="admin-table" data-id="${esc(t.id)}" data-operation="cancel">Cancel & refund</button></div></td></tr>`).join('')}</tbody></table></div>${!data.tables?.length ? '<p class="small">No tables to manage.</p>' : ''}</section><div class="admin-grid admin-wide"><section class="panel"><h2>Chip circulation</h2>${(stats.chips || []).map(c => `<div class="admin-event"><span class="small">${esc(c.context)}</span><span class="gold number">${fmt(c.total)}</span></div>`).join('') || '<p class="small">No wallet balances yet.</p>'}<h3 style="margin-top:24px">Ledger</h3>${(data.ledger || []).slice(0, 15).map(l => `<div class="audit-row"><span class="gold">${Number(l.delta) >= 0 ? '+' : ''}${fmt(l.delta)}</span> · ${esc(l.reason)}<br><small>${esc(l.context)} · ${esc(l.reference || '')}</small></div>`).join('')}</section><section class="panel"><h2>Audit trail</h2>${(data.audit || []).slice(0, 25).map(a => `<div class="audit-row">${esc(a.action)} · ${esc(a.target || '')}<br><small>${esc(new Date(a.at).toLocaleString())} · ${esc(typeof a.detail === 'object' ? JSON.stringify(a.detail) : a.detail || '')}</small></div>`).join('') || '<p class="small">Administrative actions will appear here.</p>'}</section></div></main>${footer()}`;
+  app.innerHTML = `${header()}<main class="layout"><div class="section-head"><div><div class="eyebrow">${owner ? 'Super Admin' : 'Moderation'} · Control room</div><h2>Control room</h2></div><button data-action="refresh-admin">Refresh dashboard</button><a href="/api/admin/export?context=${encodeURIComponent(state.context)}">Export results ↗</a></div><div class="stat-grid">${[['Registered players', stats.users], ['Players online', stats.online], ['Active tables', stats.tables], ['Completed matches', stats.matches]].map(([label, value]) => `<div class="stat"><div class="value number">${fmt(value)}</div><div class="label">${label}</div></div>`).join('')}</div><div class="admin-grid"><section class="panel"><h2>Create event</h2>${owner ? '<form id="event-form" class="stack event-form"><label class="full-width">Event name<input name="name" required maxlength="80" placeholder="Friday at the card room"></label><label>Starting chips<input name="startingChips" type="number" min="100" max="1000000" step="1" value="10000" required></label><label>Stake presets (comma separated)<input name="stakes" value="100,250,500" required></label><label>Minimum stake<input name="minStake" type="number" min="0" max="100000" placeholder="Use presets only"></label><label>Maximum stake<input name="maxStake" type="number" min="0" max="100000" placeholder="Use presets only"></label><label class="full-width">Description<input name="description" maxlength="1000" placeholder="Tell players about the event"></label><label>Participant limit (optional)<input name="participantLimit" type="number" min="2" max="10000" placeholder="Unlimited"></label><label>Automatic start (local time)<input name="startsAt" type="datetime-local"></label><label>Automatic end (local time)<input name="endsAt" type="datetime-local"></label><p class="small full-width">Open registration to arm the schedule. Leave times blank to start and end manually.</p><label class="check"><input type="checkbox" name="bluff" checked> Bluff</label><label class="check"><input type="checkbox" name="chromatic" checked> Chromatic</label><label class="check"><input type="checkbox" name="poker" checked> Poker</label><label class="check"><input type="checkbox" name="ohhell" checked> Oh Hell</label><label class="check"><input type="checkbox" name="rummy" checked> Rummy</label><p class="form-error full-width" role="alert"></p><button class="primary full-width">Create event</button></form>' : '<p class="small">Event creation is managed by the owner.</p>'}</section><section class="panel"><h2>House settings</h2>${owner ? `<form id="settings-form" class="stack"><label>Starting casual chips<input name="startingChips" type="number" min="100" max="1000000" value="${Number(settings.startingChips) || 10000}" required></label><label class="check"><input type="checkbox" name="bluff" ${settings.bluff !== false ? 'checked' : ''}> Open Bluff tables</label><label class="check"><input type="checkbox" name="chromatic" ${settings.chromatic !== false ? 'checked' : ''}> Open Chromatic tables</label>${['poker','ohhell','rummy'].map(g=>`<label class="check"><input type="checkbox" name="${g}" ${settings[g] !== false ? 'checked' : ''}> Open ${gameName(g)} tables</label>`).join('')}<label>Lobby announcement<input name="announcement" maxlength="400" value="${esc(settings.announcement || '')}" placeholder="A message for the club"></label><label class="check"><input type="checkbox" name="maintenance" ${settings.maintenance ? 'checked' : ''}> Maintenance mode</label><p class="form-error" role="alert"></p><button>Save house settings</button></form>` : '<p class="small">House settings are managed by the owner.</p>'}</section></div><section class="panel admin-wide"><h2>Events</h2>${(data.events || []).map(e => `<div class="admin-event"><div>${esc(e.name)}<p class="small" style="margin:5px 0 0">${fmt(e.startingChips)} starting chips · ${esc(e.status)} · ${e.participants || 0}${e.participantLimit ? " / " + e.participantLimit : ""} participants</p><p class="small">${e.startsAt ? "Starts " + esc(new Date(e.startsAt).toLocaleString()) : "Manual start"} · ${e.endsAt ? "Ends " + esc(new Date(e.endsAt).toLocaleString()) : "Manual end"}</p></div>${owner ? `<button data-action="configure-event" data-id="${esc(e.id)}" ${['completed','canceled','archived'].includes(e.status)?'disabled':''}>Schedule & registration</button><select class="event-status" data-id="${esc(e.id)}" aria-label="Status of ${esc(e.name)}">${[e.status,...(eventTransitions[e.status] || [])].map(s => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}</select>` : ''}</div>`).join('') || '<p class="small">No events yet. Casual games remain available independently.</p>'}</section><section class="panel admin-wide"><div class="section-head"><h2>Players</h2><input id="player-search" placeholder="Find a player" aria-label="Find a player" style="max-width:240px"></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Player</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>${(data.users || []).map(u => `<tr data-player-name="${esc(u.name.toLowerCase())}"><td>${esc(u.name)}</td><td>${esc(u.role)}</td><td>${u.banned ? 'Banned' : 'Active'}</td><td><button data-action="manage-player" data-id="${esc(u.id)}" ${u.role === 'superadmin' ? 'disabled' : ''}>Manage</button></td></tr>`).join('')}</tbody></table></div></section><section class="panel admin-wide"><h2>Tables</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>Table</th><th>Game</th><th>Status</th><th>Actions</th></tr></thead><tbody>${(data.tables || []).filter(t => ['waiting','playing','paused'].includes(t.status)||t.practice&&t.status==='finished').map(t => `<tr><td>${esc(t.name)}</td><td>${gameName(t.game)}</td><td>${esc(t.status)}</td><td><div class="row"><button data-action="admin-table" data-id="${esc(t.id)}" data-operation="${t.status === 'paused' ? 'resume' : 'pause'}" ${t.status === 'waiting' ? 'disabled' : ''}>${t.status === 'paused' ? 'Resume' : 'Pause'}</button><button class="danger" data-action="admin-table" data-id="${esc(t.id)}" data-operation="cancel">Cancel & refund</button></div></td></tr>`).join('')}</tbody></table></div>${!data.tables?.length ? '<p class="small">No tables to manage.</p>' : ''}</section><div class="admin-grid admin-wide"><section class="panel"><h2>Chip circulation</h2>${(stats.chips || []).map(c => `<div class="admin-event"><span class="small">${esc(c.context)}</span><span class="gold number">${fmt(c.total)}</span></div>`).join('') || '<p class="small">No wallet balances yet.</p>'}<h3 style="margin-top:24px">Ledger</h3>${(data.ledger || []).slice(0, 15).map(l => `<div class="audit-row"><span class="gold">${Number(l.delta) >= 0 ? '+' : ''}${fmt(l.delta)}</span> · ${esc(l.reason)}<br><small>${esc(l.context)} · ${esc(l.reference || '')}</small></div>`).join('')}</section><section class="panel"><h2>Audit trail</h2>${(data.audit || []).slice(0, 25).map(a => `<div class="audit-row">${esc(a.action)} · ${esc(a.target || '')}<br><small>${esc(new Date(a.at).toLocaleString())} · ${esc(typeof a.detail === 'object' ? JSON.stringify(a.detail) : a.detail || '')}</small></div>`).join('') || '<p class="small">Administrative actions will appear here.</p>'}</section></div></main>${footer()}`;
 }
 function render() { if (state.user && state.page==='events') { renderEvents(); return; } if (!state.user) renderAuth(); else if (state.page === 'room') renderRoom(); else if (state.page === 'admin') renderAdmin(); else if (state.page === 'history') renderHistory(); else renderLobby(); }
 let refreshing = false, needsRefresh = false;
+function applyRoom(room) {
+  if(state.page!=='room' || state.roomId!==room.id)return;
+  if(state.room?.id===room.id && state.room.version>room.version)return;
+  const previous=state.room;
+  const alreadyRendered=Boolean(document.querySelector('.game-room'));
+  const unchanged=previous?.id===room.id && previous.version===room.version;
+  state.room=room;state.context=room.context;
+  if(unchanged && alreadyRendered && JSON.stringify(previous.players)===JSON.stringify(room.players))return;
+  const scroll=document.querySelector('.hand')?.scrollLeft||0;
+  const oldInput=document.querySelector('#bet-amount');
+  const wager=oldInput?.value, focused=document.activeElement?.id;
+  const sameTurn=previous?.id===room.id && previous.state?.turn===room.state?.turn && previous.state?.phase===room.state?.phase;
+  renderRoom();
+  const newInput=document.querySelector('#bet-amount');
+  if(sameTurn && newInput && wager!==undefined) {
+    newInput.value=wager;
+    if(!newInput.validity.valid)newInput.value=newInput.min;
+    document.querySelector('#bet-slider').value=newInput.value;
+    if(focused==='bet-amount'||focused==='bet-slider')document.getElementById(focused)?.focus({preventScroll:true});
+  }
+  const hand=document.querySelector('.hand');if(hand)hand.scrollLeft=scroll;
+  if (!unchanged) {
+    const event=socialTransition(previous,room);
+    const cue=event?.sound || specialTransitionSound(previous,room);
+    if(previous?.id===room.id && previous.state?.winner!==room.state?.winner && room.state?.winner===state.user.id)sound('win');
+    else if(cue)sound(cue);
+    else if(previous?.id===room.id && previous.state?.turn!==room.state?.turn && room.state?.turn===state.user.id)sound('turn');
+    animateSocialTransition(event);
+    if(['poker','ohhell','rummy'].includes(room.game))animateSpecialTransition(previous,room);
+  }
+}
 async function refresh() {
   if (!state.user || savingAccount) return;
   if (refreshing) { needsRefresh=true; return; }
@@ -193,23 +281,7 @@ async function refresh() {
     if (page==='room' && roomId) {
       const room=await api(`/api/tables/${encodeURIComponent(roomId)}`);
       if(state.page!==page || state.roomId!==roomId)return;
-      const previous=state.room;
-      const alreadyRendered=Boolean(document.querySelector('.game-room'));
-      const unchanged=previous?.id===room.id && previous.version===room.version;
-      state.room=room;state.context=room.context;
-      if(unchanged && alreadyRendered && JSON.stringify(previous.players)===JSON.stringify(room.players))return;
-      const scroll=document.querySelector('.hand')?.scrollLeft||0;
-      renderRoom();
-      const hand=document.querySelector('.hand');if(hand)hand.scrollLeft=scroll;
-      if (!unchanged) {
-        const event=socialTransition(previous,room);
-        const cue=event?.sound || specialTransitionSound(previous,room);
-        if(previous?.id===room.id && previous.state?.winner!==room.state?.winner && room.state?.winner===state.user.id)sound('win');
-        else if(cue)sound(cue);
-        else if(previous?.id===room.id && previous.state?.turn!==room.state?.turn && room.state?.turn===state.user.id)sound('turn');
-        animateSocialTransition(event);
-        if(['poker','ohhell','rummy'].includes(room.game))animateSpecialTransition(previous,room);
-      }
+      applyRoom(room);
     } else {
       const data=page==='admin'?await api('/api/admin'):await api(`/api/lobby?context=${encodeURIComponent(context)}`);
       if(state.page!==page || state.context!==context)return;
@@ -227,7 +299,7 @@ function connect() {
   socket = current;
   current.addEventListener('open', () => {
     if (socket !== current) return;
-    reconnectAttempts = 0; state.connected = true; state.selected.clear(); updateConnection(); refresh();
+    reconnectAttempts = 0; state.connected = true; updateConnection(); refresh();
   });
   current.addEventListener('message', () => { if (socket !== current) return; if (state.page === 'admin') { const control = document.querySelector('[data-action=refresh-admin]'); if (control) control.textContent = 'Updates available · Refresh'; return; } clearTimeout(refreshTimeout); refreshTimeout = setTimeout(refresh, 80); });
   current.addEventListener('close', () => {
@@ -237,7 +309,7 @@ function connect() {
   });
   current.addEventListener('error', () => {});
 }
-function updateConnection() { document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('disconnected', !state.connected); el.innerHTML = `<i class="dot"></i>${state.connected ? 'Live connection' : 'Reconnecting'}`; }); }
+function updateConnection() { document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('disconnected', !state.connected); el.innerHTML = `<i class="dot"></i>${state.connected ? 'Connected' : 'Reconnecting'}`; }); }
 function updateTimer() {
   document.querySelectorAll('[data-deadline]').forEach(el => {
     const secs=Math.max(0,Math.ceil((Number(el.dataset.deadline)-Date.now()-serverClockOffset)/1000));
@@ -255,7 +327,7 @@ function rules(game) {
   const extra = {
     poker: '<p>No-limit Texas Hold’em for 2–6 players. Your buy-in becomes your table stack. Two private cards and five community cards form your best five-card hand.</p><ul><li>Small blind is 1% of the buy-in, rounded down (minimum 1); big blind is twice that. Raise amounts are total wagers for the current street.</li><li>All-ins create side pots. Short all-ins do not automatically reopen betting. Tied pots split, with odd chips awarded clockwise after the dealer.</li><li>Sessions last up to 10 hands. Any player can request cash-out after the current hand or cash out between hands. Each remaining stack returns to its owner.</li><li>Timeout checks when possible, otherwise folds. Cancellation refunds the interrupted hand’s bets and preserves completed hand results.</li></ul>',
     ohhell: '<p>Oh Hell for 3–6 players. Nine rounds deal 1, 2, 3, 4, 5, 4, 3, 2, then 1 card. The exposed card determines trump.</p><ul><li>Bid your expected tricks. The dealer bids last and cannot make the total bids equal the number of tricks.</li><li>Follow the led suit when you can. Highest trump wins; otherwise highest card of the led suit wins. The winner leads next.</li><li>An exact bid earns 10 plus the bid; a miss earns zero. Highest final score wins. Tied leaders split the pot; odd chips follow seating order.</li></ul>',
-    rummy: '<p>13-card Indian Rummy for 2–6 players using two decks and four printed jokers. The indicator rank is also wild.</p><ul><li>Draw from stock or the discard pile, then discard one card. A discarded joker cannot be picked up.</li><li>Declare by selecting a discard that leaves all 13 cards in valid sets or sequences, including at least two sequences and one pure sequence. Aces may be low or high, without wrapping.</li><li>Check my groups privately finds a valid grouping or calculates penalty points. Invalid declarations are rejected.</li><li>Dropping before your first draw costs 20 penalty points; later drops cost 40. Other penalties are capped at 80. Penalties are informational: this table uses a fixed ante, and the winner receives the pot.</li></ul>'
+    rummy: '<p>13-card Indian Rummy for 2–6 players using two decks and four printed jokers. The indicator rank is also wild.</p><ul><li>Draw from stock or the discard pile, then discard one card. A discarded joker cannot be picked up.</li><li>Declare by selecting a discard that leaves all 13 cards in valid sets or sequences, including at least two sequences and one pure sequence. Aces may be low or high, without wrapping.</li><li>Check my groups privately finds a valid grouping or calculates penalty points. Invalid declarations are rejected.</li><li>Dropping before your first draw costs 20 penalty points; later drops cost 40. Other penalties are capped at 80. A valid declaration wins the round. Event tables award the pot to the winner.</li></ul>'
   };
   if (extra[game]) return openModal(`${gameName(game)} · The rules`, extra[game] + '<p>Free chips have no monetary value. Waiting rooms expire after 30 minutes; unresolved sessions are canceled after one hour.</p>');
   const bluff = '<p>A classic game of nerve for 3–6 players.</p><ul><li>All 52 cards are dealt. On your turn, play 1–4 cards face down, declaring the rank shown by the table. You may tell the truth—or bluff.</li><li>The declared rank moves from Ace through King, then returns to Ace.</li><li>After every play, other players have 8 seconds to call bluff. If any played card differs from the declared rank, the player takes the pile. Otherwise the challenger takes it.</li><li>Your last card must survive the challenge window before you win. The winner takes the entire pot.</li><li>On a turn timeout, the server plays a card for the absent player. Rejoin with the same account to recover your hand.</li></ul>';
@@ -263,9 +335,22 @@ function rules(game) {
   openModal(`${gameName(game)} · The rules`, `${game === 'bluff' ? bluff : chromatic}<p>Chips are free and have no monetary value. An administrator can cancel a disrupted match and refund its stakes. Waiting rooms expire after 30 minutes; unresolved matches are refunded after one hour from the deal.</p>`);
 }
 function createTable(game) {
-  const event = state.lobby?.events?.find(e => e.id === state.context);
-  const min = game === 'poker' ? 10 : 0;
-  openModal('Your table. Your pace.', `<form id="create-table-form" class="stack"><input type="hidden" name="game" value="${game}"><label>Seats<select name="capacity">${Array.from({length:['bluff','ohhell'].includes(game)?4:5},(_,i)=>i+(['bluff','ohhell'].includes(game)?3:2)).map(n=>`<option value="${n}" ${n===6?'selected':''}>${n} players</option>`).join('')}</select></label><label>Table name<input name="name" value="${esc(state.user.name)}’s table" maxlength="48" required></label><label>${game === 'poker' ? event ? 'Buy-in' : 'Starting stack' : 'Optional event stake'} per player${event ? `${event.minStake!==undefined?`<input name="stake" type="number" min="${Math.max(min,event.minStake)}" max="${event.maxStake}" value="${Math.max(min,event.minStake)}" step="1" required>`:`<select name="stake">${event.stakes.map(n=>`<option value="${n}">${fmt(n)} chips</option>`).join('')}</select>`}` : game!=='poker' ? '<input name="stake" type="hidden" value="0"><span>Scoring only · no ante</span>' : `<input name="stake" type="number" min="${min}" max="100000" step="1" value="250" list="stake-presets" required><datalist id="stake-presets">${[min,100,250,500,1000,5000].map(n=>`<option value="${n}">`).join('')}</datalist>`}</label><p class="small">${event ? 'Stakes follow the event owner’s settings.' : game==='poker' ? 'Choose any whole-chip buy-in from 10 to 100,000.' : 'Casual card games use their own scores, with no wallet or ante.'}</p>${!event ? `<label>Computer opponents<select name="bots"><option value="0">Friends only</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n} bot${n>1?'s':''} · computer player</option>`).join('')}</select></label><p class="small">Casual tables have no wallet cost, rewards or event leaderboard impact. Friends can join open seats.</p><label class="check"><input type="checkbox" name="private"> Private room · join by code</label>` : ''}${game==='poker'?'<div class="row"><label>Small blind (optional)<input name="smallBlind" type="number" min="1" max="99999" placeholder="Automatic"></label><label>Big blind (optional)<input name="bigBlind" type="number" min="2" max="100000" placeholder="Automatic"></label></div>':''}${event?'<label class="check"><input type="checkbox" name="private"> Private event table · registered invitees only</label>':''}<p class="form-error" role="alert"></p><button class="primary">Create ${gameName(game)} table</button></form>`);
+  const event=state.lobby?.events?.find(e=>e.id===state.context);
+  const min=Math.max(game==='poker'?10:0,event?.minStake||0);
+  const presets=availableStakes(game,event);
+  if(event && (event.maxStake!==undefined?event.maxStake<min:!presets.length))return toast('This event has no available stake for this game.');
+  const minimumSeats=['bluff','ohhell'].includes(game)?3:2;
+  const stake=event || game==='poker' ? `<label>${game==='poker'?(event?'Buy-in':'Starting stack'):'Stake'}<span class="input-unit">
+    ${event && event.minStake===undefined?`<select name="stake">${presets.map(n=>`<option value="${n}">${fmt(n)}</option>`).join('')}</select>`:`<input name="stake" type="number" min="${min}" max="${event?.maxStake??100000}" value="${event?min:250}" step="1" required>`}<span>chips</span></span></label>`:'<input name="stake" type="hidden" value="0">';
+  openModal('Create '+gameName(game),`<form id="create-table-form" class="stack">
+    <input type="hidden" name="game" value="${game}">
+    <label>Table name<input name="name" value="${esc(state.user.name)}’s table" maxlength="48" required></label>
+    <div class="form-pair"><label>Seats<select name="capacity">${Array.from({length:7-minimumSeats},(_,i)=>i+minimumSeats).map(n=>`<option value="${n}" ${n===6?'selected':''}>${n}</option>`).join('')}</select></label>${stake}</div>
+    ${!event?`<label>Bots<select name="bots"><option value="0">None</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>`:''}
+    ${game==='poker'?'<details class="setup-options"><summary>Set blinds</summary><div class="form-pair"><label>Small blind<input name="smallBlind" type="number" min="1" max="99999" placeholder="Auto"></label><label>Big blind<input name="bigBlind" type="number" min="2" max="100000" placeholder="Auto"></label></div></details>':''}
+    <label class="check"><input type="checkbox" name="private"> Private table · invite link required</label>
+    <p class="form-error" role="alert"></p><button class="primary">Create table</button>
+  </form>`);
 }
 function managePlayer(id) {
   const user = state.admin.users.find(u => u.id === id); if (!user) return;
@@ -280,9 +365,9 @@ async function submitAction(action) {
   document.querySelectorAll('.game-actions button, .pile-action, .spectrum-deck').forEach(b=>b.disabled=true);
   app.setAttribute('aria-busy','true');
   try {
-    await api(`/api/tables/${encodeURIComponent(state.roomId)}/action`, {actionId:crypto.randomUUID(),expectedVersion:state.room.version,action});
-    state.selected.clear();
-    await refresh();
+    const room = await api(`/api/tables/${encodeURIComponent(state.roomId)}/action`, {actionId:crypto.randomUUID(),expectedVersion:state.room.version,action});
+    if(['play','discard','draw','drop','next-round','next-hand','cashout','fold'].includes(action.type))state.selected.clear();
+    applyRoom(room);
   } catch(error) {
     if(state.page==='room')renderRoom();
     throw error;
@@ -293,7 +378,9 @@ document.addEventListener('click', async event => {
   const action = button.dataset.action;
   try {
     if(handleExperienceAction(button,state.room,state.selected,renderRoom)) return;
-    if(action==='events') { state.page='events'; state.context='casual'; await refresh(); }
+    if(action==='lobby-game') {state.lobbyGame=button.dataset.game;renderLobby();}
+    else if(action==='return-table') await enterRoom(button.dataset.id);
+    else if(action==='events') { state.page='events'; state.context='casual'; await refresh(); }
     else if(action==='open-event') { state.context=button.dataset.id; state.page='lobby'; await refresh(); }
     else if(action==='casual') { state.context='casual'; state.page='lobby'; await refresh(); }
     else if (action === 'refresh-admin') await refresh();
@@ -311,7 +398,7 @@ document.addEventListener('click', async event => {
     }
     else if (action === 'rules') rules(button.dataset.game);
     else if (action === 'create-table') createTable(button.dataset.game);
-    else if (action === 'join-code') openModal('An invitation to play.', '<form id="join-code-form" class="stack"><label>Room code<input name="code" required maxlength="20" autocomplete="off" placeholder="Enter your invitation code"></label><p class="form-error" role="alert"></p><button class="primary">Take a seat</button></form>');
+    else if (action === 'join-code') openModal('Join by code', '<form id="join-code-form" class="stack"><label>Room code<input name="code" required maxlength="20" autocomplete="off" placeholder="Room code"></label><p class="form-error" role="alert"></p><button class="primary">Join table</button></form>');
     else if (action === 'join-table') { const room = await api(`/api/tables/${encodeURIComponent(button.dataset.id)}/join`, {}); await enterRoom(room.id || room.table?.id || button.dataset.id); }
     else if (action === 'join-event') { await api(`/api/events/${encodeURIComponent(state.context)}/join`, {}); toast('You’re on the guest list. Your event wallet is ready.'); await refresh(); }
     else if (action === 'host-operation' || action==='rematch' || action==='confirm-close-table') {
@@ -333,7 +420,11 @@ document.addEventListener('click', async event => {
     else if (action === 'starting-colour') await submitAction({type:'choose-color',color:button.dataset.color});
     else if (action === 'bluff-skip') await submitAction({type:'skip'});
     else if (action === 'play-cards') await submitAction({ type: 'play', cards: [...state.selected], ...(state.room.game === 'chromatic' ? { color: document.querySelector('#wild-color')?.value } : {rank:document.querySelector('#bluff-rank')?.value}) });
-    else if (action === 'special-action') await submitAction({type:button.dataset.move,cards:[...state.selected],source:button.dataset.source,amount:Number(button.dataset.amount ?? document.querySelector('#bet-amount')?.value ?? document.querySelector('#bid-amount')?.value)});
+    else if (action === 'special-action') {
+      const amount=document.querySelector('#bet-amount');
+      if(button.dataset.move==='raise' && amount && !amount.reportValidity())return;
+      await submitAction({type:button.dataset.move,cards:[...state.selected],source:button.dataset.source,amount:Number(button.dataset.amount ?? amount?.value ?? document.querySelector('#bid-amount')?.value)});
+    }
     else if (action === 'chromatic-action') await submitAction({type:button.dataset.move,target:button.dataset.target,color:document.querySelector('#wild-color')?.value});
     else if (action === 'draw-card') await submitAction({ type: 'draw' });
     else if (action === 'challenge') await submitAction({ type: 'challenge' });
@@ -400,6 +491,10 @@ document.addEventListener('submit', async event => {
 document.addEventListener('change', async event => {
   try {
     if (event.target.id === 'bluff-rank') {claimRank=event.target.value;updateSocialSelection(state.room,state,esc,claimRank);}
+    if(event.target.name==='capacity' && event.target.form?.id==='create-table-form') {
+      const bots=event.target.form.elements.namedItem('bots');
+      if(bots){const max=Number(event.target.value)-1;for(const option of bots.options)option.disabled=Number(option.value)>max;bots.value=String(Math.min(Number(bots.value),max));}
+    }
     if (event.target.id === 'context') { state.context = event.target.value; await refresh(); }
     if (event.target.classList.contains('event-status')) {
       const id = event.target.dataset.id, status = event.target.value;

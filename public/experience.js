@@ -5,13 +5,17 @@ const rankValue = c => ({A:1,J:11,Q:12,K:13}[c.rank] || Number(c.rank) || 99);
 export function orderedHand(room, hand = room.state.hand) {
   if (handLayout.room !== room.id) {handLayout = {room:room.id, ids:[]};arranging=false;marked=new Set();groups=[];}
   const byId = new Map(hand.map(c => [c.id,c]));
+  marked = new Set([...marked].filter(id=>byId.has(id)));
+  groups = groups.map(group=>group.filter(id=>byId.has(id))).filter(group=>group.length>1);
   handLayout.ids = [...handLayout.ids.filter(id => byId.has(id)), ...hand.filter(c => !handLayout.ids.includes(c.id)).map(c=>c.id)];
   return handLayout.ids.map(id=>byId.get(id));
 }
-export function handTools(room) {
+export function handTools(room, selected=new Set()) {
   if(room.state) orderedHand(room);
   if (!['rummy','ohhell','bluff'].includes(room.game)) return '';
-  return `<div class="hand-tools" aria-label="Arrange your hand"><span>${arranging?'Arrange mode · select cards to group':'Arrange hand'}</span><button data-action="hand-sort" data-sort="suit">By suit</button><button data-action="hand-sort" data-sort="rank">By rank</button><button data-action="hand-arrange" aria-pressed="${arranging}">${arranging?'Done arranging':'Arrange / group'}</button>${arranging?`<button data-action="hand-group" ${marked.size<2?'disabled':''}>Group ${marked.size||''} cards</button>`:''}<button data-action="hand-move" data-direction="-1" aria-label="Move selected card left">← Move</button><button data-action="hand-move" data-direction="1" aria-label="Move selected card right">Move →</button></div>`;
+  const moving = [...(arranging?marked:selected)][0];
+  const index = handLayout.ids.indexOf(moving);
+  return `<div class="hand-tools" aria-label="Arrange your hand"><button data-action="hand-sort" data-sort="suit">Suit</button><button data-action="hand-sort" data-sort="rank">Rank</button><button data-action="hand-arrange" aria-pressed="${arranging}">${arranging?'Done':'Arrange'}</button>${arranging?`<span class="arrange-hint">${marked.size?'Selected '+marked.size:'Select cards to group'}</span><button data-action="hand-group" ${marked.size<2?'disabled':''}>Group</button>`:''}${arranging||moving?`<button data-action="hand-move" data-direction="-1" aria-label="Move selected card left" ${index<=0?'disabled':''}>←</button><button data-action="hand-move" data-direction="1" aria-label="Move selected card right" ${index<0||index===handLayout.ids.length-1?'disabled':''}>→</button>`:''}</div>`;
 }
 export function renderHand(room,card,esc,selectable,disabled=()=>false) {
   const cards=orderedHand(room); let prior=-1;

@@ -61,3 +61,16 @@ test('Rummy draw and discard motions use observer-visible changes and checked me
   assert.equal(specialTransitionSound(draw,discard),'place');
   assert.equal(discard.state.topCard.id,picked);
 });
+
+test('Poker pot sizing accounts for the call and existing wager',()=>{
+  let g=createGame('poker',ids,0,{buyIn:500});
+  for(let i=0;i<2;i++){
+    const view=snapshot(g,i,g.turn),s=view.state,markup=render(view,g.turn);
+    const half=Number(/data-amount="(\d+)">½ pot/.exec(markup)[1]);
+    const pot=Number(/data-amount="(\d+)">Pot/.exec(markup)[1]);
+    const clamp=n=>Math.max(s.minRaise,Math.min(n,s.maxRaise));
+    assert.equal(half,clamp((s.bets[g.turn]||0)+s.toCall+Math.round((s.pot+s.toCall)/2)));
+    assert.equal(pot,clamp((s.bets[g.turn]||0)+s.toCall+s.pot+s.toCall));
+    g=actGame(g,g.turn,{type:'call'},i+1);
+  }
+});

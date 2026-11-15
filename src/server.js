@@ -89,6 +89,24 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     r.settled = true; r.status = 'canceled'; r.finished = Date.now();
     (await audit(actor, 'table-canceled', r.id, { reason })); return (await save(r));
   };
+  async function pauseRoom(r, byEvent) {
+    const now = Date.now();
+    r.status = 'paused';
+    r.pausedByEvent = byEvent;
+    r.pausedAt = now;
+    r.pausedRemaining = Math.max(0, r.state.deadline - now);
+    await save(r);
+  }
+  async function resumeRoom(r) {
+    const now = Date.now();
+    r.started += Math.max(0, now - (r.pausedAt || r.savedAt || now));
+    r.status = 'playing';
+    r.pausedByEvent = false;
+    r.state.deadline = now + (r.pausedRemaining ?? (r.state.phase === 'challenge' ? 8000 : 30000));
+    delete r.pausedAt;
+    delete r.pausedRemaining;
+    await save(r);
+  }
   const scheduledEvents = async () => {
     let changed=false; const now=Date.now();
     for(const e of (await events())) {
@@ -197,7 +215,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       if (path === '/health') return send({ status: 'ok' });
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail('Method not allowed', 405);
-        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/experience.js':'experience.js', '/social.js':'social.js', '/style.css': 'style.css', '/social.css':'social.css', '/special-polish.css':'special-polish.css', '/logo.png': 'logo.png' };
+        const files = { '/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/special.js':'special.js', '/experience.js':'experience.js', '/social.js':'social.js', '/style.css': 'style.css', '/social.css':'social.css', '/interface.css':'interface.css', '/special-polish.css':'special-polish.css', '/logo.png': 'logo.png' };
         if (!files[path]) fail('Not found', 404);
         const content = readFileSync(resolve(ROOT, 'public', files[path]));
         res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' })[extname(files[path])], 'Cache-Control': 'no-cache' });
@@ -290,7 +308,9 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       }
       if (path === '/api/lobby' && req.method === 'GET') {
         const context = url.searchParams.get('context') || 'casual'; if (context !== 'casual') (await event(context));
-        return send({ user: publicUser(user), context, events: (await events()), wallet: (await wallet(user.id, context)), participating: !!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, context)), settings: (await settings()),
+        const activeTable = (await rooms(true)).find(r => r.players.some(p => p.id === user.id && !p.left));
+        return send({ user: publicUser(user), context,
+          activeTable: activeTable ? {id:activeTable.id,name:activeTable.name,game:activeTable.game,context:activeTable.context} : null, events: (await events()), wallet: (await wallet(user.id, context)), participating: !!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, context)), settings: (await settings()),
           tables: (await rooms()).filter(r => r.context === context && ((!r.private && (['waiting','playing','paused'].includes(r.status)||r.practice&&r.status==='finished')) || r.players.some(p => p.id === user.id))).slice(-100).map(r => safeRoom(r, user)),
           leaderboard: (await board(context)), history: (await rooms()).filter(r => r.context === context && r.settled && r.players.some(p => p.id === user.id)).slice(-20).reverse().map(r => safeRoom(r, user)) });
       }
@@ -355,7 +375,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           if(op==='manage') {
             if(r.host!==user.id)fail('Only the host can manage this table',403);
             if(!['waiting','finished'].includes(r.status)&&!betweenCasualHands(r))fail('Manage seats between games');
-            if(b.operation==='close'){if(!r.settled)await cancel(r,user.id,'Host closed table');r.status='canceled';await save(r);return {ok:true};}
+            if(b.operation==='close'){if(r.settled&&!r.practice)return {ok:true};if(!r.settled)await cancel(r,user.id,'Host closed table');r.status='canceled';await save(r);return {ok:true};}
             if(!r.practice)fail('Bots and rematches are available in casual play');
             if(b.difficulty!==undefined&&!['easy','medium','hard'].includes(b.difficulty))fail('Invalid difficulty');
             if(b.operation==='rematch'){if(r.status!=='finished')fail('Finish current game first');for(const p of r.players.filter(p=>!p.bot&&!p.left))await freeSeat(p);r.players=r.players.filter(p=>!p.left);r.state=null;r.status='waiting';r.settled=false;r.payouts=null;r.finished=null;r.created=Date.now();r.botMovedAt=null;r.botChallengeChecked=null;}
@@ -421,8 +441,8 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
             if (!transitions[e.status].includes(b.status)) fail('Invalid event transition');
             for (const r of (await rooms()).filter(r => r.context === e.id && !r.settled)) {
               if (['completed','canceled'].includes(b.status)) (await cancel(r, user.id, 'Event closed; unfinished stakes refunded'));
-              else if (b.status === 'paused' && r.status === 'playing') { r.status = 'paused'; r.pausedByEvent = true; (await save(r)); }
-              else if (b.status === 'active' && r.status === 'paused' && r.pausedByEvent) { r.status = 'playing'; r.pausedByEvent = false; r.state.deadline = Date.now() + (r.state.phase === 'challenge' ? 8000 : 30000); (await save(r)); }
+              else if (b.status === 'paused' && r.status === 'playing') await pauseRoom(r, true);
+              else if (b.status === 'active' && r.status === 'paused' && r.pausedByEvent) await resumeRoom(r);
             }
             if(['completed','canceled'].includes(b.status))await run('INSERT INTO event_results VALUES(?,?) ON CONFLICT(event_id) DO NOTHING',e.id,JSON.stringify(await board(e.id)));
             (await run('UPDATE events SET status=? WHERE id=?', b.status, e.id)); (await audit(user.id, 'event-status', e.id, { before: e.status, after: b.status })); return (await event(e.id));
@@ -453,10 +473,10 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           if (tm) {
             const r = (await room(tm[1]));
             if (b.operation === 'cancel') (await cancel(r, user.id, 'Administrator canceled'));
-            else if (b.operation === 'pause' && r.status === 'playing') { r.status = 'paused'; r.pausedByEvent = false; (await save(r)); }
+            else if (b.operation === 'pause' && r.status === 'playing') await pauseRoom(r, false);
             else if (b.operation === 'resume' && r.status === 'paused') {
               if (r.context !== 'casual' && (await event(r.context)).status !== 'active') fail('Resume the event first');
-              r.status = 'playing'; r.state.deadline = Date.now() + (r.state.phase === 'challenge' ? 8000 : 30000); (await save(r));
+              await resumeRoom(r);
             } else fail('Invalid table operation');
             (await audit(user.id, 'table-control', r.id, b)); return safeRoom(r, user);
           }
@@ -521,15 +541,15 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         }
         if(r.status!=='playing')continue;
         const now=Date.now(),actor=r.players.find(p=>p.id===r.state.turn);
+        if (r.state.deadline <= now) {
+          try { r.state = tickGame(r.state, now); }
+          catch { await cancel(r,'system','Rules engine recovery refund'); changed = true; continue; }
+          await finish(r); await save(r); changed = true; continue;
+        }
         try{
           if(r.game==='bluff'&&r.state.phase==='challenge'&&now-(r.savedAt||0)>=1400&&r.botChallengeChecked!==r.state.moves){r.botChallengeChecked=r.state.moves;for(const p of r.players.filter(p=>(p.bot||p.left)&&p.id!==r.state.lastPlay.player)){const a=botAction(viewGame(r.state,p.id),Math.random,p.difficulty||'medium');if(a){r.state=actGame(r.state,p.id,a,now);break;}}await finish(r);await save(r);changed=true;continue;}
           if(actor&&(actor.bot||actor.left)&&r.state.phase!=='challenge'&&now-(r.botMovedAt||r.savedAt||0)>=1400){const a=botAction(viewGame(r.state,actor.id),Math.random,actor.difficulty||'medium');if(a){r.state=actGame(r.state,actor.id,a,now);r.botMovedAt=now;await finish(r);await save(r);changed=true;continue;}}
         }catch{await cancel(r,'system','Automated seat recovery');changed=true;continue;}
-        if(r.state.deadline>now)continue;
-        // Engine errors refund the table; database errors roll the entire transaction back.
-        try { r.state = tickGame(r.state,Date.now()); }
-        catch { await cancel(r,'system','Rules engine recovery refund'); changed = true; continue; }
-        await finish(r); await save(r); changed = true;
       }
       return changed;
     }).then(changed => changed ? broadcast() : undefined)

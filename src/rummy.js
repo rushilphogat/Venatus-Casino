@@ -67,7 +67,7 @@ export function actRummy(original,id,a,now=Date.now()){
   check(original.players.includes(id)&&!original.dropped[id],'Not an active player');check(original.phase!=='finished'&&now<original.deadline,'Action window ended');
   const g=structuredClone(original);check(id===g.turn,'Not your turn');
   if(a.type==='analyze'){
-    const hand=g.hands[id].filter(c=>!a.cards?.includes(c.id));check(hand.length===13,'Choose one card to discard before checking 14 cards');g.analysis[id]=analyzeRummy(hand,g.wildRank);g.message=g.analysis[id].valid?'Your proposed hand is a valid declaration.':'The hand needs two sequences, including one pure sequence, and all 13 cards grouped.';return g;
+    const hand=g.hands[id].filter(c=>!a.cards?.includes(c.id));check(hand.length===13,'Choose one card to discard before checking 14 cards');g.analysis[id]=analyzeRummy(hand,g.wildRank);return g;
   }
   if(a.type==='drop'){
     check(g.phase==='draw','Drop before drawing');g.dropped[id]=g.turns[id]?40:20;const active=g.players.filter(p=>!g.dropped[p]);if(active.length===1)finish(g,active[0]);else{g.turn=next(g);g.deadline=now+30000;}return g;
