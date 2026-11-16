@@ -20,4 +20,9 @@ dialog.cinema[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:
 @media(prefers-reduced-motion:reduce){.cinema *,.bot-comment-toast{animation:none!important;transition:none!important}}
 .cinema-talk{font-size:.75rem;color:#c7d8cc;padding:.5rem .8rem;background:#ffffff09;border-radius:.4rem;margin:.7rem auto 0;max-width:40ch}
 .cinema-light{overflow:hidden}
+.cinema .playing-card{position:relative;container-type:inline-size;padding:0;overflow:hidden;box-sizing:border-box}
+.cinema .playing-card .corner{position:absolute;top:6%;left:8%;width:auto;gap:0;font-size:clamp(12px,24cqw,34px);line-height:1}
+.cinema .playing-card .corner svg{width:.6em;height:.6em}
+.cinema .playing-card .corner.bottom{top:auto;left:auto;right:8%;bottom:6%}
+.cinema .playing-card .center-suit{width:34%;height:34%}
 .cinema-board{transition:transform .9s cubic-bezier(.15,.7,.2,1)}.cinema[data-shot="0"] .cinema-board{transform:translateY(4vh) scale(1.2)}.cinema[data-shot="1"] .cinema-board{transform:perspective(1000px) rotateX(6deg) scale(1.08)}.cinema[data-shot="3"] .cinema-awards>div{animation:award-arrive .65s cubic-bezier(.2,.9,.3,1) both}@keyframes award-arrive{from{translate:0 -16px;scale:.94;opacity:0}to{translate:0 0;scale:1;opacity:1}}@media(max-width:700px){.cinema[data-shot="0"] .cinema-board{transform:translateY(2vh) scale(1.03)}.cinema[data-shot="1"] .cinema-board{transform:none}}
