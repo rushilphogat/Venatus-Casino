@@ -69,7 +69,7 @@ test('table chat is private, bounded, moderated and independent from game versio
   await f.ok(`/api/tables/${r.id}/leave`,b.cookie,{});assert.equal((await f.request(path,b.cookie)).status,403);
 });
 
-test('active two-hour table is not refunded and simultaneous Ready cannot skip protected reading time',async t=>{
+test('active two-hour table is not refunded and Ready votes advance once and survive restart',async t=>{
   const f=await fixture(t),a=await f.guest('First'),b=await f.guest('Second');
   let r=await f.ok('/api/tables',a.cookie,{name:'Long session',game:'poker',stake:100,pace:'relaxed',manualResults:false});
   await f.ok(`/api/tables/${r.id}/join`,b.cookie,{});r=await f.ok(`/api/tables/${r.id}/start`,a.cookie,{});
@@ -82,8 +82,8 @@ test('active two-hour table is not refunded and simultaneous Ready cannot skip p
   const payload={expectedVersion:r.version,action:{type:'ready',presentationId:r.state.presentation.id}};
   await f.ok(`/api/tables/${r.id}/action`,a.cookie,{...payload,actionId:randomUUID()});
   const both=await f.ok(`/api/tables/${r.id}/action`,b.cookie,{...payload,actionId:randomUUID()});
-  assert.equal(both.state.phase,'between-hands');assert.equal(both.state.handNumber,1);assert.equal(both.state.presentation.ready.length,2);
-  await f.restart();const recovered=await f.ok(`/api/tables/${r.id}`,a.cookie);assert.equal(recovered.state.phase,'between-hands');assert.ok(recovered.state.presentation.minimumUntil>Date.now());
+  assert.equal(both.state.handNumber,2);assert.equal(both.state.presentation,null);
+  await f.restart();const recovered=await f.ok(`/api/tables/${r.id}`,a.cookie);assert.equal(recovered.state.handNumber,2);assert.equal(recovered.state.presentation,null);
 });
 
 test('bot event comments are persisted once in the shared chat without changing state on reads',async t=>{

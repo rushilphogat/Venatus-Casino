@@ -13,35 +13,27 @@ const foldToResult=options=>{
   return actPoker(g,g.turn,{type:'fold'},2);
 };
 
-test('Poker Ready cannot shorten readable minimum, needs all humans, and bots cannot auto-deal',()=>{
+test('Poker advances on a strict human majority with bots already ready',()=>{
   let g=foldToResult({humanPlayers:['a','b']});
-  const resultHand=g.handNumber,min=g.presentation.minimumUntil;
+  assert.deepEqual(g.presentation.ready,['c']);
   assert.equal(botAction(viewPoker(g,'c')),null);
-  g=actPoker(g,'a',{type:'next-hand'},3);
-  g=actPoker(g,'b',{type:'ready'},4);
-  assert.equal(g.handNumber,resultHand);
-  assert.equal(tickPoker(g,min-1),g);
-  assert.throws(()=>actPoker(g,'c',{type:'ready'},5),/human/);
-  g=tickPoker(g,min);
-  assert.equal(g.handNumber,resultHand+1);
+  assert.equal(g.presentation.maximumUntil,20002);
+  assert.throws(()=>actPoker(g,'c',{type:'ready'},3),/human/);
+  g=actPoker(g,'a',{type:'ready'},3);assert.equal(g.handNumber,1);
+  g=actPoker(g,'b',{type:'ready'},4);assert.equal(g.handNumber,2);
   assert.equal(g.presentation,null);
 });
 
-test('Poker unready humans receive maximum hold and solo manual waits for Continue',()=>{
+test('Unready humans get exactly twenty seconds; old solo manual option cannot extend it',()=>{
   let multi=foldToResult({humanPlayers:['a','b']});
-  const max=multi.presentation.maximumUntil;
   multi=actPoker(multi,'a',{type:'ready'},3);
-  multi=tickPoker(multi,multi.deadline);
-  assert.equal(multi.phase,'between-hands');
-  assert.equal(multi.deadline,max);
-  multi=tickPoker(multi,max);
-  assert.equal(multi.handNumber,2);
+  assert.equal(tickPoker(multi,20001),multi);
+  assert.equal(tickPoker(multi,20002).handNumber,2);
   let solo=foldToResult({humanPlayers:['a'],manualResults:true});
-  solo=tickPoker(solo,solo.presentation.maximumUntil);
-  assert.equal(solo.handNumber,1);
-  assert.equal(solo.phase,'between-hands');
-  solo=actPoker(solo,'a',{type:'continue'},solo.presentation.minimumUntil+1);
-  assert.equal(solo.handNumber,2);
+  assert.deepEqual(solo.presentation.ready,['b','c']);
+  assert.equal(solo.presentation.manual,false);
+  assert.equal(tickPoker(solo,20002).handNumber,2);
+  solo=actPoker(solo,'a',{type:'continue'},3);assert.equal(solo.handNumber,2);
 });
 
 test('All-in runout reveals no future cards until each server deadline, settles only once',()=>{
@@ -100,21 +92,21 @@ test('Poker replay keeps own folded cards private and never exposes privateHands
   const after=viewPoker(g,'a');assert.deepEqual(after.recentResults[0].ownHand,a.lastResult.ownHand);
 });
 
-test('Bluff verdict survives bot/human attempts to advance and remains in history afterwards',()=>{
+test('Bluff verdict advances on a majority and remains in history afterwards',()=>{
   let g=createGame('bluff',['a','b','c'],0,{houseRules:'street',humanPlayers:['a','b']});
   g.hands.a=cards('Ks 2c');g.hands.b=cards('Ah 3s');
   g=actGame(g,'a',{type:'play',cards:['Ks'],rank:'A'},1);
   g=actGame(g,'b',{type:'challenge'},2);
   assert.equal(g.phase,'reveal');assert.equal(g.reveal.collectedCount,1);
-  assert.equal(g.presentation.minimumUntil,16002);
+  assert.equal(g.presentation.maximumUntil,7002);assert.deepEqual(g.presentation.ready,['c']);
+  assert.equal(tickGame(g,7001),g);assert.equal(tickGame(g,7002).phase,'play');
   assert.equal(botAction(viewGame(g,'c')),null);
   assert.throws(()=>actGame(g,'b',{type:'play',cards:['Ah'],rank:'K'},3),/Review/);
-  g=actGame(g,'a',{type:'ready'},4);g=actGame(g,'b',{type:'ready'},5);
-  assert.equal(g.phase,'reveal');
-  g=tickGame(g,g.presentation.minimumUntil);
+  g=actGame(g,'a',{type:'ready'},4);assert.equal(g.phase,'reveal');
+  g=actGame(g,'b',{type:'ready'},5);
   assert.equal(g.phase,'play');assert.equal(g.turn,'b');assert.equal(g.declaredRank,null);
   const result=structuredClone(g.lastReveal);
-  g=actGame(g,'b',{type:'play',cards:['Ah'],rank:'A'},16003);
+  g=actGame(g,'b',{type:'play',cards:['Ah'],rank:'A'},6);
   assert.equal(g.reveal,null);assert.deepEqual(viewGame(g,'c').lastReveal,result);
 });
 

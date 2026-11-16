@@ -121,11 +121,11 @@ function bluffAction(game, userId, action, now) {
     game.pile = [];
     if (game.houseRules === 'street') { game.declaredRank=null; game.skips=0; }
     game.message = lied ? 'Bluff exposed. The player takes the pile.' : 'An honest declaration. The challenger takes the pile.';
-    beginPresentation(game,'bluff-verdict',now,8000,20000);
+    beginPresentation(game,'bluff-verdict',now);
     game.reveal.id=game.presentation.id;game.lastReveal=structuredClone(game.reveal);
     game.recentReveals||=[];game.recentReveals.push(structuredClone(game.reveal));game.recentReveals=game.recentReveals.slice(-10);
     if (!game.hands[play.player].length) finish(game, play.player);
-    else{advanceBluff(game, now);game.phase='reveal';game.deadline=game.presentation.minimumUntil;}
+    else{advanceBluff(game, now);game.phase='reveal';game.deadline=game.presentation.maximumUntil;}
     return;
   }
   requireCondition(action.type === 'play', 'Unknown action');

@@ -25,4 +25,16 @@ dialog.cinema[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:
 .cinema .playing-card .corner svg{width:.6em;height:.6em}
 .cinema .playing-card .corner.bottom{top:auto;left:auto;right:8%;bottom:6%}
 .cinema .playing-card .center-suit{width:34%;height:34%}
+/* Give each transient surface its own contrast pair instead of inherited body copy. */
+.bot-comment-toast{box-sizing:border-box;max-width:calc(100vw - 2rem);bottom:auto;top:1rem;left:auto;right:1rem;max-height:30dvh;overflow:auto}
+.bot-comment-toast>div{min-width:0;flex:1;overflow-wrap:anywhere}
+.bot-comment-toast p{color:#20324a}.bot-comment-toast strong{color:#425269}
+.bot-comment-toast button{color:#20324a;background:#e1d4b9;flex-shrink:0;min-width:2rem;min-height:2rem}
+.cinema-talk{color:#e0eee4;background:#24372e;overflow-wrap:anywhere}
+.cinema-header>span{min-width:0;overflow-wrap:anywhere}.cinema-header button{flex-shrink:0}
+.cinema-footer{box-sizing:border-box}.cinema-footer>div{min-width:0}
+.cinema-footer button{white-space:normal}.cinema-body>*{flex-shrink:0}
+.cinema-heading{max-width:100%;overflow-wrap:anywhere}.cinema-claim{max-width:100%;overflow-wrap:anywhere;flex-wrap:wrap}
+.cinema-awards strong{min-width:0}.cinema-awards b{overflow-wrap:anywhere}
+@media(max-width:700px){.cinema-footer>div{flex-wrap:wrap}.cinema-footer button{flex:1 1 8rem}.cinema-header{gap:.5rem}.cinema-hands{gap:.6rem}.cinema-hand{flex-basis:calc(50% - .6rem);box-sizing:border-box}.cinema-hand header{flex-wrap:wrap}.award-mark{margin-left:auto}}
 .cinema-board{transition:transform .9s cubic-bezier(.15,.7,.2,1)}.cinema[data-shot="0"] .cinema-board{transform:translateY(4vh) scale(1.2)}.cinema[data-shot="1"] .cinema-board{transform:perspective(1000px) rotateX(6deg) scale(1.08)}.cinema[data-shot="3"] .cinema-awards>div{animation:award-arrive .65s cubic-bezier(.2,.9,.3,1) both}@keyframes award-arrive{from{translate:0 -16px;scale:.94;opacity:0}to{translate:0 0;scale:1;opacity:1}}@media(max-width:700px){.cinema[data-shot="0"] .cinema-board{transform:translateY(2vh) scale(1.03)}.cinema[data-shot="1"] .cinema-board{transform:none}}

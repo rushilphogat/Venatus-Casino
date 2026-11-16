@@ -9,8 +9,8 @@ export function toolbar(){return '<div class="experience-toolbar"><button type="
 export function presentationControls(room,viewer){
   const p=room.state?.presentation;if(!p)return '';
   const ready=p.ready?.includes(viewer),required=p.required||[],can=required.includes(viewer);
-  const label=room.game==='poker'?'Next hand':room.game==='ohhell'?'Next round':'Continue';
-  return `<div class="moment-result" role="status"><span>${p.manual?'Take your time':`${p.ready?.length||0} / ${required.length} ready`}</span>${can?`<button class="primary" data-lounge="ready" ${ready?'disabled':''}>${ready?'Ready ✓':label}</button>`:''}<small>${p.manual?'Continue when you have seen the result.':'The next turn starts after everyone is ready or the countdown ends.'}</small></div>`;
+  const votes=required.filter(id=>p.ready?.includes(id)).length;
+  return `<div class="moment-result" role="status"><span>${votes} / ${p.majority||Math.floor(required.length/2)+1} votes to continue</span>${can?`<button class="primary" data-lounge="ready" ${ready?'disabled':''}>${ready?'Ready ✓':'Continue'}</button>`:''}<small>Majority advances · ${Math.round((p.maximumUntil-p.startedAt)/1000)}s maximum${p.bots?.length?' · Bots ready':''}</small></div>`;
 }
 function applySettings(){const root=document.documentElement;root.dataset.uiScale=settings.scale;root.dataset.effects=settings.effects;root.style.setProperty('--card-adjust',String(settings.cards));root.dataset.screenShake=String(settings.shake);try{localStorage.setItem('venatus-experience',JSON.stringify(settings));}catch{}}
 function eventFor(room){const g=room?.state;if(!g)return null;const name=id=>room.players.find(p=>p.id===id)?.name||'Player';
@@ -43,14 +43,14 @@ export async function refreshChat(){
   try{const data=await options.api(`/api/rooms/${encodeURIComponent(room)}/chat`);if(options.getState().roomId!==room)return;
     const fresh=data.messages.filter(m=>m.id>chatCursor);messages=data.messages;chatCursor=data.cursor||0;renderMessages();
     for(const message of fresh.slice(-3))if(!muted.has(message.userId)&&Date.now()-message.at<10000){
-      if(message.bot&&!cinemaTalk(message)){document.querySelector('.bot-comment-toast')?.remove();const bubble=document.createElement('aside');bubble.className='bot-comment-toast';bubble.setAttribute('role','status');bubble.innerHTML=`${portrait({avatar:message.avatar,name:message.name})}<div><strong>${esc(message.name)} · Bot</strong><p>${esc(message.text)}</p></div><button aria-label="Dismiss comment">×</button>`;bubble.querySelector('button').onclick=()=>bubble.remove();document.body.append(bubble);setTimeout(()=>bubble.remove(),6500);}
+      if(message.bot&&!cinemaTalk(message)&&!chatOpen){document.querySelector('.bot-comment-toast')?.remove();const bubble=document.createElement('aside');bubble.className='bot-comment-toast';bubble.setAttribute('role','status');bubble.innerHTML=`${portrait({avatar:message.avatar,name:message.name})}<div><strong>${esc(message.name)} · Bot</strong><p>${esc(message.text)}</p></div><button aria-label="Dismiss comment">×</button>`;bubble.querySelector('button').onclick=()=>bubble.remove();document.body.append(bubble);setTimeout(()=>bubble.remove(),6500);}
       if(message.type==='emote'){const seat=[...document.querySelectorAll('[data-seat],[data-seat-id]')].find(s=>(s.dataset.seat||s.dataset.seatId)===message.userId);if(seat){const bubble=document.createElement('span');bubble.className='seat-emote';bubble.textContent=emotes[message.emote]||'✦';seat.append(bubble);setTimeout(()=>bubble.remove(),3200);}}
     }
     if(!chatOpen&&fresh.length&&fresh.some(m=>m.userId!==state.user.id))document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='•');
   }catch(error){if(chatOpen)drawer.querySelector('.chat-error').textContent=error.message;}finally{chatLoading=false;if(chatAgain){chatAgain=false;queueMicrotask(refreshChat);}}
 }
 async function sendMessage(body){const state=options.getState();if(!state.roomId)throw new Error('Join a table to chat.');await options.api(`/api/rooms/${encodeURIComponent(state.roomId)}/chat`,body);await refreshChat();}
-function openChat(){chatOpen=true;drawer.hidden=false;drawer.querySelector('.chat-error').textContent='';document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='');
+function openChat(){document.querySelector('.bot-comment-toast')?.remove();chatOpen=true;drawer.hidden=false;drawer.querySelector('.chat-error').textContent='';document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='');
   const room=options.getState().room,g=room?.state,event=room&&eventFor(room);let trigger=event?.trigger||({caught:'bluff_caught',honest:'honest_claim',rummy:'valid_declaration'})[event?.family]||(event?'public_win':'round_start');
   if(!event&&room?.game==='chromatic'){if(g.pendingPenalty)trigger='draw_stack';else if(g.topCard?.value==='reverse')trigger='reverse';else if(Object.values(g.counts||{}).includes(1))trigger='one_card';}
   if(!event&&room?.game==='poker'&&g.events?.at(-1)?.action==='allin')trigger='public_all_in';

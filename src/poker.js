@@ -69,8 +69,7 @@ function showdown(g,now){
  g.lastResult={...result,id:`poker:${now}:${g.handNumber}`,pot:total(g),handNumber:g.handNumber,board:structuredClone(g.board),showdown:structuredClone(g.showdown),events:structuredClone(g.events),privateHands:structuredClone(g.hands)};
  g.recentResults||=[];g.recentResults.push(structuredClone(g.lastResult));g.recentResults=g.recentResults.slice(-10);
  g.contributions=Object.fromEntries(g.players.map(p=>[p,0]));g.bets={...g.contributions};g.currentBet=0;
- const extra=Math.max(0,result.pots.filter(p=>!p.uncalled).length-1)*2500;
- beginPresentation(g,live.length===1?'poker-uncontested':'poker-showdown',now,live.length===1?4500:11000+extra,Math.min(30000,20000+extra));
+ beginPresentation(g,live.length===1?'poker-uncontested':'poker-showdown',now);
  if(g.cashoutRequested||g.handNumber>=10||g.players.filter(p=>g.stacks[p]>0).length<2)finish(g);
  else{g.phase='between-hands';g.turn=next(g,g.dealer,p=>g.stacks[p]>0);g.message='Hand settled. Review the result, then ready up.';}
 }

@@ -16,10 +16,12 @@ test('quick comments are bounded and only selected for their exact public event'
   assert.equal(commentFor('bluff','private_hand_strength','seed'),'');
   assert.ok(comments.some(c=>c.trigger==='honest_claim'&&c.text===commentFor('bluff','honest_claim','seed')));
 });
-test('quick pace reserves reading time separately from long cinematics',()=>{
+test('reveal caps are fixed across every table pace',()=>{
   for(const pace of ['quick','standard','relaxed']){
     const game={type:'bluff',players:['a','b']};configurePresentation(game,{pace});
-    const p=beginPresentation(game,'bluff-verdict',100,8000,20000);assert.ok(p.minimumUntil-p.startedAt-6000>=10000);assert.ok(p.maximumUntil>p.minimumUntil);
-    const poker=beginPresentation(game,'poker-showdown',100,11000,20000);assert.ok(poker.minimumUntil-poker.startedAt-7000>=18000);
+    for(const kind of ['bluff-verdict','ohhell-trick','ohhell-round']){
+      const p=beginPresentation(game,kind,100);assert.equal(p.minimumUntil,100);assert.equal(p.maximumUntil,7100);
+    }
+    for(const kind of ['poker-showdown','poker-uncontested','match-win'])assert.equal(beginPresentation(game,kind,100).maximumUntil,20100);
   }
 });

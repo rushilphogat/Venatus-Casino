@@ -164,7 +164,7 @@ async function scenario(game) {
       const challenge=await clickMove(actor,r,action(actor.page,'play-cards'));assert.equal(challenge.state.phase,'challenge');
       const other=players.find(p=>p.id!==actor.id);
       const called=await clickMove(other,r,action(other.page,'challenge'));assert.equal(called.state.reveal.cards.length,2);
-      for(const p of players)await clickMove(p,r,p.page.locator('[data-lounge=ready]'));
+      for(const p of players.slice(0,Math.floor(players.length/2)+1))await clickMove(p,r,p.page.locator('[data-lounge=ready]'));
       await page.waitForFunction(()=>!document.querySelector('[data-lounge=ready]'),null,{timeout:25000});
       actor=await getActor();await clickMove(actor,r,action(actor.page,'bluff-skip'));
     } else if(game==='chromatic'){

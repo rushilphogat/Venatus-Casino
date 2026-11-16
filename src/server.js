@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { createGame, actGame, tickGame, viewGame } from './games.js';
+import {syncPresentation} from './presentation.js';
 import { botAction } from './bots.js';
 import { chooseBotComment } from './table-talk.js';
 import sharp from 'sharp';
@@ -68,16 +69,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
     if(!r.state)return;
     const ids=r.players.filter(p=>!p.bot&&!p.left).map(p=>p.id);
     r.state.humanPlayers=ids;
-    const presentation=r.state.presentation;
-    if(presentation){
-      const connected=ids.filter(id=>connections.has(id));
-      const required=connected.length?connected:ids;
-      presentation.required=required;
-      presentation.ready=presentation.ready.filter(id=>presentation.required.includes(id));
-      const manual=r.manualResults!==false&&ids.length===1;
-      if(presentation.manual&&!manual)presentation.maximumUntil=Math.max(presentation.minimumUntil,presentation.startedAt+Math.round(20000*({quick:.75,standard:1,relaxed:1.4}[r.pace]||1)));
-      if(presentation.kind!=='ohhell-trick')presentation.manual=manual;
-    }
+    if(r.state.phase!=='finished')syncPresentation(r.state);
   }
   function roomSeats(players) {
     const names = players.map(p => profiles.get(p.id)?.display_name || guestNickname(p.name));

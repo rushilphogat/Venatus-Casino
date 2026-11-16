@@ -92,9 +92,9 @@ export function scoreMoment(family,duration=0){
  const resolve=()=>{engine.soften(.55);chord.slice(1).forEach((m,i)=>{play('keys',m,.035*i,2,.17,(i-1.5)*.2);play('vibes',m+12,.11*i,1.6,.09,(i-1.5)*.25);});play('impact',38,0,1,.18);engine.soften(1,1.8);};
  if(family==='resolve'||!duration){resolve();return()=>{};}
  engine.soften(.22,.25);play('pad',chord[0],0,2.7,.13,-.3);play('pad',chord[1],0,2.7,.1,.3);play('swell',60,0,1.8,.16);
- timers.push(setTimeout(()=>{play('card',60,0,.3,.4);play('chip',60,.12,.3,.18);},1400));
- timers.push(setTimeout(()=>{play('impact',38,0,1.2,.23);chord.slice(1).forEach((m,i)=>play('vibes',m+12,i*.095,1.7,.14,(i-1.5)*.25));},3200));
- timers.push(setTimeout(resolve,Math.min(duration-500,5000)));
+ timers.push(setTimeout(()=>{play('card',60,0,.3,.4);play('chip',60,.12,.3,.18);},duration*.2));
+ timers.push(setTimeout(()=>{play('impact',38,0,1.2,.23);chord.slice(1).forEach((m,i)=>play('vibes',m+12,i*.095,1.7,.14,(i-1.5)*.25));},duration*.45));
+ timers.push(setTimeout(resolve,duration*.7));
  return()=>{for(const timer of timers)clearTimeout(timer);for(const source of played)try{source.stop();}catch{}engine.soften(1,.5);};
 }
 export function installAudio(){if(installed)return;installed=true;const unlock=()=>{started=true;try{boot();ctx?.resume().catch(()=>{});}catch{}};document.addEventListener('pointerdown',unlock,{once:true});document.addEventListener('keydown',unlock,{once:true});document.addEventListener('visibilitychange',()=>{applyMix();if(ctx)next=ctx.currentTime+.05;});setInterval(schedule,30);}

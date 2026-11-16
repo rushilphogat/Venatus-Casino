@@ -54,7 +54,7 @@ export function specialRoom(room, ui) {
     status+=roundLedger(g,name,esc);
     if(g.phase==='bid')controls=own?`<div class="bid-pad" role="group" aria-label="Choose your bid"><strong>Bid tricks</strong>${g.legalBids.map(b=>button('bid',String(b),true,`data-amount="${b}" aria-label="Bid ${b} tricks"`)).join('')}</div>`:`<span class="small muted">Waiting for ${esc(name(g.turn))} to bid</span>`;
     else if(g.phase==='round-end')controls=g.presentation?presentationControls(room,state.user.id):button('next-round','Deal next round');
-    else if(g.phase==='trick-end')controls='<span class="trick-verdict">'+esc(name(g.lastTrickWinner))+' takes the trick</span>';
+    else if(g.phase==='trick-end')controls=presentationControls(room,state.user.id);
     else controls=button('play','Play selected card',own&&state.selected.size===1);
   }else{
     center=`<div class="rummy-stage"><div class="rummy-deck"><span class="eyebrow">Wild</span>${card(g.indicator)}<small>${esc(g.wildRank)} is wild</small></div><button class="rummy-deck pile-action" data-action="special-action" data-move="draw" data-source="stock" ${own&&g.phase==='draw'?'':'disabled'} aria-label="Draw from closed stock">${card(null)}<strong>Closed deck</strong><small>${g.stockCount} cards</small></button><button class="rummy-deck pile-action" data-action="special-action" data-move="draw" data-source="discard" ${own&&g.phase==='draw'&&g.canTakeDiscard?'':'disabled'} aria-label="Take the open discard">${g.topCard?card(g.topCard):'<span class="discard-space"></span>'}<strong>Open discard</strong><small>${!g.topCard?'Empty':g.canTakeDiscard?'':'Joker · locked'}</small></button></div>`;

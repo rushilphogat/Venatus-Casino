@@ -34,7 +34,7 @@ function collectTrick(g,now){
   if(g.players.every(p=>!g.hands[p].length)){
     for(const p of g.players)if(g.bids[p]===g.tricks[p])g.scores[p]+=10+g.bids[p];
     g.history.push({round:g.round,bids:{...g.bids},tricks:{...g.tricks},scores:{...g.scores}});
-    beginPresentation(g,'ohhell-round',now,8000,20000);
+    beginPresentation(g,'ohhell-round',now);
     if(g.round===SCHEDULE.length){const max=Math.max(...Object.values(g.scores));g.winners=g.players.filter(p=>g.scores[p]===max);g.winner=g.winners.length===1?g.winners[0]:null;g.phase='finished';g.deadline=null;g.message='Nine rounds complete. Highest score wins; tied leaders split the pot.';}
     else{g.phase='round-end';g.message='Round scored: exact bids earn 10 plus the bid. Misses earn zero.';}
   }else{g.phase='play';g.deadline=now+30000;g.message='The trick winner leads.';}
@@ -45,7 +45,10 @@ export function actOhHell(original,id,a,now=Date.now()){
   if(g.phase==='round-end'){
     check(['next-round','ready','continue'].includes(a.type),'Ready up for the next round');if(!g.presentation||readyPresentation(g,id,now)){g.dealer=next(g,g.dealer);round(g,now);}return g;
   }
-  check(g.phase!=='trick-end','Wait for the trick to be collected');
+  if(g.phase==='trick-end'){
+    check(['ready','continue'].includes(a.type),'Wait for the trick to be collected');
+    if(readyPresentation(g,id,now))collectTrick(g,now);return g;
+  }
   check(g.turn===id,'Not your turn');
   if(g.phase==='bid'){
     check(a.type==='bid' && legalBids(g).includes(a.amount),'Choose a legal bid; total bids cannot equal the tricks on the dealer’s bid');g.bids[id]=a.amount;
@@ -56,7 +59,7 @@ export function actOhHell(original,id,a,now=Date.now()){
     g.hands[id]=g.hands[id].filter(c=>c.id!==card.id);g.trick.push({player:id,card});g.turn=next(g,id);
     if(g.trick.length===g.players.length){
       const won=trickWinner(g.trick,g.trumpCard.suit);g.tricks[won]++;g.lastTrick=structuredClone(g.trick);g.turn=won;g.lastTrickWinner=won;g.message='Trick complete. The winner leads.';g.phase='trick-end';
-      const p=beginPresentation(g,'ohhell-trick',now,1500,1500);p.manual=false;p.maximumUntil=p.minimumUntil;p.required=[];
+      beginPresentation(g,'ohhell-trick',now);
     }
   }
   if(['bid','play'].includes(g.phase))g.deadline=now+30000;g.moves++;return g;

@@ -203,7 +203,7 @@ test('Oh Hell completes nine rounds over HTTP with private hands and exact payou
     if(['trick-end','round-end'].includes(s.phase)){
       const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
       stored.state.deadline=Date.now()-1;
-      if(stored.state.presentation){stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;}
+      if(stored.state.presentation){stored.state.presentation.startedAt=Date.now()-20001;stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;}
       await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),r.id);
       for(let wait=0;wait<100;wait++){await new Promise(resolve=>setTimeout(resolve,10));r=await g.view(p);if(r.state.phase!==s.phase)break;}
       assert.notEqual(r.state.phase,s.phase,'presentation should advance at its maximum');continue;
@@ -540,7 +540,7 @@ test('complete Chromatic match through HTTP legal actions conserves chips and pe
     const color = own.state.colors.reduce((best, candidate) => own.state.hand.filter(c => c.color === candidate).length > own.state.hand.filter(c => c.color === best).length ? candidate : best, own.state.colors[0]);
     const phase = own.state.phase;
     if(phase==='round-end'){
-      const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id)).data);stored.state.deadline=Date.now()-1;stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;
+      const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id)).data);stored.state.deadline=Date.now()-1;stored.state.presentation.startedAt=Date.now()-20001;stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;
       await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),table.id);
       for(let wait=0;wait<100;wait++){await new Promise(resolve=>setTimeout(resolve,10));snapshot=await f.ok(`/api/tables/${table.id}`,player.cookie);if(snapshot.state.phase!==phase)break;}
       assert.notEqual(snapshot.state.phase,phase);continue;

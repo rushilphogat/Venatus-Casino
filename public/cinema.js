@@ -35,26 +35,27 @@ export function openCinema(event,options){
   closeCinema();
   const subtle=options.settings.effects!=='full'||matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uncontested=event.family==='poker'&&!Object.keys(event.room.state.lastResult?.showdown||{}).length;
-  const duration=subtle||uncontested?0:event.family==='poker'?7000:6000,concept=sceneFor(event),dialog=document.createElement('dialog');
+  const midgame=event.room.status!=='finished'&&(['caught','honest'].includes(event.family)||event.room.state.phase==='round-end');
+  const duration=subtle||uncontested?0:midgame?2200:5000,concept=sceneFor(event),dialog=document.createElement('dialog');
   dialog.className=`cinema cinema-${event.family} cinema-${concept.id}${duration?'':' cinema-still'}`;dialog.dataset.shot='0';dialog.dataset.scene=concept.id;dialog.setAttribute('aria-labelledby','cinema-title');
   const caption=commentFor(event.room.game,event.trigger||({caught:'bluff_caught',honest:'honest_claim',rummy:'valid_declaration'})[event.family]||'public_win',event.id);
   dialog.innerHTML=`<div class="cinema-light" aria-hidden="true"></div><div class="cinema-grain" aria-hidden="true"></div><header class="cinema-header"><span>${esc(event.sub)}</span><button data-cinema-close aria-label="Return to table">Back to table ↗</button></header><div class="cinema-body"><div class="cinema-heading"><span class="cinema-kicker">${event.family==='poker'?'THE SHOWDOWN':['caught','honest'].includes(event.family)?'CARDS ON THE TABLE':'THE FINAL CARD'}</span><h2 id="cinema-title">${duration?(event.family==='poker'?'Showdown':'The reveal'):esc(event.title)}</h2><p class="cinema-caption">${esc(caption)}</p></div>${evidence(event,options.card)}<div class="cinema-confetti" aria-hidden="true">${Array.from({length:18},(_,i)=>`<i style="--i:${i}">${['♠','♦','♥','♣'][i%4]}</i>`).join('')}</div></div><footer class="cinema-footer"><span class="cinema-time" role="status"></span><div><button data-cinema-skip ${duration?'':'hidden'}>Show result now</button><button class="primary" data-cinema-ready hidden>Ready for next hand</button><button data-cinema-done>Back to table</button></div></footer>`;
   const focus=document.activeElement;document.body.append(dialog);dialog.showModal();
-  const a={event,options,dialog,focus,room:event.room,timers:[],refresh:null,finished:duration===0};active=a;
+  const a={event,options,dialog,focus,room:event.room,timers:[],refresh:null,finished:duration===0,expiresAt:Date.now()+(midgame?7000:20000)};active=a;
   const ready=dialog.querySelector('[data-cinema-ready]'),skip=dialog.querySelector('[data-cinema-skip]'),status=dialog.querySelector('.cinema-time');
   const finish=()=>{if(active!==a)return;for(const t of a.timers)clearTimeout(t);a.timers=[];a.finished=true;dialog.dataset.shot='4';dialog.querySelector('h2').textContent=event.title;skip.hidden=true;a.refresh();};
   a.refresh=()=>{
-    if(active!==a)return;const p=a.room.state?.presentation,can=p?.required?.includes(a.room.viewerId)&&a.room.status==='playing';ready.hidden=!can||!a.finished;
-    const hasReadied=p?.ready?.includes(a.room.viewerId);ready.disabled=!!hasReadied;ready.textContent=hasReadied?'Ready ✓':event.family==='poker'?'Ready for next hand':'Continue';
-    if(!a.finished){status.textContent='Revealing the result…';return;}
-    if(!p||a.room.status!=='playing'){status.textContent='Take your time. This result stays until you close it.';return;}
-    const now=Date.now(),min=Math.max(0,Math.ceil((p.minimumUntil-now)/1000)),max=Math.max(0,Math.ceil((p.maximumUntil-now)/1000));
-    status.textContent=p.manual?(hasReadied&&min?`Ready · next hand in ${min}s`:'Take your time. Continue when you are ready.'):min?`Reading time · at least ${min}s left`:`${p.ready.length}/${p.required.length} ready · next hand in ${max}s`;
+    if(active!==a)return;const p=a.room.status==='playing'?a.room.state?.presentation:null,can=p?.required?.includes(a.room.viewerId);ready.hidden=!!p&&!can;
+    const hasReadied=can&&p.ready?.includes(a.room.viewerId);ready.disabled=!!hasReadied;ready.textContent=hasReadied?'Ready ✓':'Continue';
+    const max=Math.max(0,Math.ceil(((p?.maximumUntil||a.expiresAt)-Date.now())/1000));
+    if(max===0){closeCinema();return;}
+    const votes=p?.required.filter(id=>p.ready.includes(id)).length||0;
+    status.textContent=p?`${votes}/${p.majority||Math.floor(p.required.length/2)+1} votes · ${max}s left${p.bots?.length?' · Bots ready':''}`:`${max}s · Continue to return to the table`;
   };
   dialog.querySelector('[data-cinema-close]').onclick=closeCinema;dialog.querySelector('[data-cinema-done]').onclick=closeCinema;
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeCinema();});skip.onclick=()=>{a.stopScore?.();scoreMoment('resolve');finish();};
-  ready.onclick=async()=>{ready.disabled=true;try{const p=a.room.state.presentation;await options.ready(p.id);}catch(error){status.textContent=error.message;ready.disabled=false;}};
+  ready.onclick=async()=>{if(a.room.status!=='playing'||!a.room.state.presentation){closeCinema();return;}ready.disabled=true;try{await options.ready(a.room.state.presentation.id);}catch(error){status.textContent=error.message;ready.disabled=false;}};
   a.stopScore=scoreMoment(event.family,duration);
-  if(duration){for(const [at,shot,title]of [[1400,'1','Cards revealed'],[3200,'2',event.title],[5000,'3',event.title]])a.timers.push(setTimeout(()=>{if(active===a){dialog.dataset.shot=shot;dialog.querySelector('h2').textContent=title;}},at));a.timers.push(setTimeout(finish,duration));}else finish();
+  if(duration){for(const [fraction,shot,title]of [[.2,'1','Cards revealed'],[.45,'2',event.title],[.7,'3',event.title]])a.timers.push(setTimeout(()=>{if(active===a){dialog.dataset.shot=shot;dialog.querySelector('h2').textContent=title;}},duration*fraction));a.timers.push(setTimeout(finish,duration));}else finish();
   a.clock=setInterval(a.refresh,250);a.refresh();
 }

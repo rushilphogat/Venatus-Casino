@@ -326,7 +326,7 @@ function createTable(game) {
     <div class="form-pair"><label>Seats<select name="capacity">${Array.from({length:7-minimumSeats},(_,i)=>i+minimumSeats).map(n=>`<option value="${n}" ${n===6?'selected':''}>${n}</option>`).join('')}</select></label>${stake}</div>
     ${!event?`<label>Bots<select name="bots"><option value="0">None</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>`:''}
     ${game==='poker'?'<details class="setup-options"><summary>Set blinds</summary><div class="form-pair"><label>Small blind<input name="smallBlind" type="number" min="1" max="99999" placeholder="Auto"></label><label>Big blind<input name="bigBlind" type="number" min="2" max="100000" placeholder="Auto"></label></div></details>':''}
-    <div class="form-pair"><label>Table pace<select name="pace"><option value="relaxed">Relaxed</option><option value="standard" selected>Standard</option><option value="quick">Quick</option></select></label><label class="check"><input type="checkbox" name="manualResults" checked> Wait for me after solo results</label></div><label class="check"><input type="checkbox" name="private"> Private table · invite link required</label>
+    <label>Table pace<select name="pace"><option value="relaxed">Relaxed</option><option value="standard" selected>Standard</option><option value="quick">Quick</option></select></label><label class="check"><input type="checkbox" name="private"> Private table · invite link required</label>
     <p class="form-error" role="alert"></p><button class="primary">Create table</button>
   </form>`);
 }
