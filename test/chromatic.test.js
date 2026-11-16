@@ -57,7 +57,8 @@ test('scores carry between rounds and match ends at 500',()=>{
   const g=fixture(); g.hands.a=[c('a')]; g.scores.a=499;
   const result=act(g,'a',{type:'play',cards:['a']},1); assert.equal(result.phase,'finished'); assert.equal(result.winner,'a');
   g.scores.a=0; const round=act(g,'a',{type:'play',cards:['a']},1);
-  const next=act(round,'b',{type:'next-round'},2); assert.equal(next.round,g.round+1); assert.equal(next.scores.a,6);
+  const ready=act(round,'b',{type:'next-round'},2);assert.equal(ready.round,g.round);
+  const next=tick(ready,ready.presentation.maximumUntil); assert.equal(next.round,g.round+1); assert.equal(next.scores.a,6);
 });
 test('two-player reverse returns turn and draw-two skips recipient',()=>{
   const g=fixture(); g.players=['a','b']; delete g.hands.c;
@@ -77,7 +78,7 @@ test('30 full classic matches reach 500 points while conserving every card',()=>
     let g=create(players,0),time=1,moves=0;
     while(g.phase!=='finished' && moves++<10000){
       const v=view(g,g.turn); let a;
-      if(g.phase==='round-end') a={type:'next-round'};
+      if(g.phase==='round-end'){time=g.presentation.maximumUntil;g=tick(g,time++);continue;}
       else if(g.phase==='choose-color') a={type:'choose-color',color:'ruby'};
       else if(g.phase==='challenge') a={type:Math.random()<.3?'challenge':'accept'};
       else { const id=v.legalCardIds[0]; a=id?{type:'play',cards:[id],color:'ruby',declare:true}:{type:g.phase==='drawn'?'pass':'draw'}; }

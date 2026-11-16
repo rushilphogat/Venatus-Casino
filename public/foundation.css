@@ -1,0 +1,4 @@
+/* Existing functional/admin styles form the base; the current design owns the cascade. */
+@import url('/style.css') layer(legacy);
+@import url('/special-polish.css') layer(legacy);
+@import url('/social.css') layer(legacy);

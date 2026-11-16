@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGame,actGame,viewGame} from '../src/games.js';
+import {createGame,actGame,tickGame,viewGame} from '../src/games.js';
 import {specialRoom,specialTransitionSound} from '../public/special.js';
 
 const ids=['a','b','c'];
@@ -41,9 +41,13 @@ test('Oh Hell bid pad matches server bids and a completed trick heads to its win
     const card=viewGame(g,g.turn).legalCardIds[0];
     g=actGame(g,g.turn,{type:'play',cards:[card]},2);
     const after=snapshot(g,version++);
-    assert.equal(specialTransitionSound(before,after),i===2?'collect':'place');
+    assert.equal(specialTransitionSound(before,after),'place');
     assert.match(render(after),/data-trick-card="/);
-    if(i===2)assert.match(render(after),new RegExp('Last trick · '+g.lastTrickWinner.toUpperCase()));
+    if(i===2){
+      assert.match(render(after),new RegExp('Last trick · '+g.lastTrickWinner.toUpperCase()));
+      g=tickGame(g,g.deadline);
+      assert.equal(specialTransitionSound(after,snapshot(g,version++)),'collect');
+    }
   }
 });
 test('Rummy draw and discard motions use observer-visible changes and checked meld feedback',()=>{

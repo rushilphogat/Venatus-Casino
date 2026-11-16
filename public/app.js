@@ -1,6 +1,10 @@
 import { handTools, renderHand, handleExperienceAction, installHandDrag } from '/experience.js';
 import { specialRoom, animateSpecialTransition, specialTransitionSound, installSpecialInput } from '/special.js';
 import { socialRoom, socialTransition, animateSocialTransition, updateSocialSelection } from '/social.js';
+import { portrait, installProfiles } from '/profiles.js';
+import { installControls } from '/controls.js';
+import { installAudio, playSound, setMix, getMix } from '/audio.js';
+import { installLounge, syncLounge, refreshChat, toolbar } from '/lounge.js';
 const app = document.querySelector('#app');
 const modal = document.querySelector('#modal');
 const state = { user: null, setupRequired: false, context: 'casual', page: 'lobby', roomId: null, room: null, lobby: null, admin: null, selected: new Set(), connected: false, authMode: 'guest', busy: false, lobbyGame: 'poker' };
@@ -36,36 +40,7 @@ function toast(message) {
   target.textContent = message; target.classList.add('show');
   clearTimeout(toastTimeout); toastTimeout = setTimeout(() => target.classList.remove('show'), 4500);
 }
-function sound(kind = 'tap') {
-  if (audioPrefs.muted) return;
-  try {
-    audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state !== 'running') {
-      if (!navigator.userActivation?.hasBeenActive) return;
-      audioContext.resume().catch(() => {});
-    }
-    const volume = Math.max(0,Math.min(1,Number(audioPrefs.volume)||0));
-    const notes = {win:[523,659,784],error:[180,140],turn:[440,660],exposed:[220,440,660],honest:[330,220],reverse:[350,600,350],skip:[540,350],stack:[220,330,440],wild:[440,554,659],collect:[520,680]};
-    const start = audioContext.currentTime;
-    if (['deal','draw','place','chips'].includes(kind)) {
-      const length = Math.floor(audioContext.sampleRate*.07);
-      const buffer = audioContext.createBuffer(1,length,audioContext.sampleRate);
-      const data=buffer.getChannelData(0);
-      for(let i=0;i<length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/length,2);
-      const noise=audioContext.createBufferSource(), filter=audioContext.createBiquadFilter(), gain=audioContext.createGain();
-      noise.buffer=buffer;filter.type='bandpass';filter.frequency.value=kind==='chips'?2600:1100;
-      gain.gain.value=volume*.32;
-      noise.connect(filter);filter.connect(gain);gain.connect(audioContext.destination);noise.start();
-      return;
-    }
-    (notes[kind] || [480]).forEach((frequency,index) => {
-      const osc=audioContext.createOscillator(), gain=audioContext.createGain(), at=start+index*.07;
-      osc.type='sine';osc.frequency.value=frequency;
-      gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(volume*.11,at+.006);gain.gain.exponentialRampToValueAtTime(.001,at+.12);
-      osc.connect(gain);gain.connect(audioContext.destination);osc.start(at);osc.stop(at+.13);
-    });
-  } catch { /* Audio availability never blocks a game action. */ }
-}
+function sound(kind = 'tap') { playSound(kind); }
 const paths = {
   S: 'M20 2C15 10 3 15 3 24a10 10 0 0 0 17 7c-1 5-3 8-7 11h14c-4-3-6-6-7-11a10 10 0 0 0 17-7C37 15 25 10 20 2Z',
   H: 'M20 40C16 35 3 25 3 14 3 1 18 0 20 10 23 0 37 1 37 14c0 11-13 21-17 26Z',
@@ -89,14 +64,14 @@ function card(c, interactive = false, disabled = false) {
   const cls = `playing-card ${colorCard ? `color-${color}` : red ? 'red' : ''} ${selected ? 'selected' : ''}`;
   const tag = interactive ? 'button' : 'div';
   const value = joker?'JK':({ skip: '⊘', reverse: '↔', draw2: '+2', wild: 'W', wilddraw4: '+4' }[rank] || rank);
-  return `<${tag} class="${cls}" ${interactive ? `data-action="select-card" data-id="${esc(c.id)}" aria-pressed="${selected}" ${disabled ? 'disabled' : ''}` : ''} aria-label="${esc(label)}"><span class="corner">${esc(value)}${colorCard||joker ? '' : suitSvg(suit)}</span>${joker?'<svg class="center-suit" viewBox="0 0 40 44" aria-hidden="true"><path d="M20 3 25 15 38 17 28 26 31 40 20 33 9 40 12 26 2 17 15 15Z"/></svg>':colorCard ? `<span class="center-value">${esc(value)}</span>` : suitSvg(suit, 'center-suit')}<span class="corner bottom">${esc(value)}${colorCard||joker ? '' : suitSvg(suit)}</span></${tag}>`;
+  return `<${tag} class="${cls}" data-card-id="${esc(c.id)}" ${interactive ? `data-action="select-card" data-id="${esc(c.id)}" aria-pressed="${selected}" ${disabled ? 'disabled' : ''}` : ''} aria-label="${esc(label)}"><span class="corner">${esc(value)}${colorCard||joker ? '' : suitSvg(suit)}</span>${joker?'<svg class="center-suit" viewBox="0 0 40 44" aria-hidden="true"><path d="M20 3 25 15 38 17 28 26 31 40 20 33 9 40 12 26 2 17 15 15Z"/></svg>':colorCard ? `<span class="center-value">${esc(value)}</span>` : suitSvg(suit, 'center-suit')}<span class="corner bottom">${esc(value)}${colorCard||joker ? '' : suitSvg(suit)}</span></${tag}>`;
 }
 function brand() { return '<div class="brand"><img src="/logo.png" alt="Venatus logo"><div><strong>VENATUS</strong><span>CASINO</span></div></div>'; }
 function header() {
-  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Card room</button><button data-action="events">Events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><div class="avatar">${esc(initials(state.user.name))}</div><span class="account-name small">${esc(state.user.name)}</span>${state.user.role==='guest'?'<button class="subtle" data-action="save-guest">Save account</button>':''}<button class="subtle" data-action="logout">${state.user.role==='guest'?'Exit guest':'Sign out'}</button></div>` : ''}</header>`;
+  return `<header class="topbar">${brand()}${state.user ? `<nav class="nav" aria-label="Main navigation"><button data-action="casual" class="${state.page === 'lobby' || state.page === 'room' ? 'active' : ''}">Card room</button><button data-action="events">Events</button><button data-action="navigate" data-page="history" class="${state.page === 'history' ? 'active' : ''}">Activity</button>${adminRole() ? `<button data-action="navigate" data-page="admin" class="${state.page === 'admin' ? 'active' : ''}">Control room</button>` : ''}</nav><div class="account"><button class="profile-button" data-profile aria-label="Edit your player">${portrait(state.user)}<span class="account-name">${esc(state.user.name)}</span></button>${state.user.role==='guest'?'<button class="subtle" data-action="save-guest">Save account</button>':''}<button class="subtle" data-action="logout">${state.user.role==='guest'?'Exit guest':'Sign out'}</button></div>` : ''}</header>`;
 }
 function footer() {
-  return `<footer class="footer"><span>Venatus · Virtual chips</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${audioPrefs.muted?'Unmute':'Mute'} sound">Sound ${audioPrefs.muted?'off':'on'}</button><input id="sound-volume" type="range" min="0" max="1" step="0.05" value="${audioPrefs.volume}" aria-label="Sound volume"></div>` : ''}</footer>`;
+  return `<footer class="footer"><span>Venatus · Virtual chips</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${getMix().muted?'Unmute':'Mute'} sound">Sound ${getMix().muted?'off':'on'}</button><button data-lounge="settings">Display & sound</button></div>` : ''}</footer>`;
 }
 function renderAuth() {
   const mode = state.authMode;
@@ -194,7 +169,7 @@ function waitingRoom(room) {
   const min=['bluff','ohhell'].includes(room.game)?3:2, host=room.host===state.user.id;
   return `${header()}<main class="layout waiting-room"><div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby">← Lobby</button><h1>${esc(room.name)}</h1><p>${gameName(room.game)}${room.game==='poker'?' · '+fmt(room.stake)+' chips':''}</p></div><button data-action="leave-table">Leave table</button></div>
     <div class="waiting-columns"><section><div class="section-head"><h2>Players</h2><span>${room.players.length} / ${room.capacity||6}</span></div>
-    <ul class="player-roster">${room.players.map(p=>`<li><span class="avatar">${esc(initials(p.name))}</span><strong>${esc(p.name)}</strong><span>${p.id===room.host?'Host':p.bot?'Bot':p.online===false?'Offline':'Ready'}</span>${host&&p.bot?`<button class="subtle" data-action="host-operation" data-operation="remove-bot" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">Remove</button>`:''}</li>`).join('')}</ul>${hostControls(room)}</section>
+    <ul class="player-roster">${room.players.map(p=>`<li>${portrait(p)}<strong>${esc(p.name)}</strong><span>${p.id===room.host?'Host':p.bot?'Bot':p.online===false?'Offline':'Ready'}</span>${host&&p.bot?`<button class="subtle" data-action="host-operation" data-operation="remove-bot" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">Remove</button>`:''}</li>`).join('')}</ul>${hostControls(room)}</section>
     <aside class="invite-controls"><h2>Invite players</h2><button class="primary" data-action="copy-link">Copy invite link</button><div class="invite-code"><span class="room-code">${esc(room.code)}</span><button class="subtle" data-action="copy-code">Copy code</button></div>
     <div class="start-controls">${host?`<button class="primary" data-action="start-table" ${room.players.length<min?'disabled':''}>Deal the cards</button>${room.players.length<min?`<p>Add ${min-room.players.length} more player${min-room.players.length===1?'':'s'} to start.</p>`:''}`:'<p>Waiting for the host to deal.</p>'}</div></aside></div>${connection()}</main>${footer()}`;
 }
@@ -248,6 +223,7 @@ function applyRoom(room) {
   const alreadyRendered=Boolean(document.querySelector('.game-room'));
   const unchanged=previous?.id===room.id && previous.version===room.version;
   state.room=room;state.context=room.context;
+  syncLounge(previous,room);
   if(unchanged && alreadyRendered && JSON.stringify(previous.players)===JSON.stringify(room.players))return;
   const scroll=document.querySelector('.hand')?.scrollLeft||0;
   const oldInput=document.querySelector('#bet-amount');
@@ -301,7 +277,7 @@ function connect() {
     if (socket !== current) return;
     reconnectAttempts = 0; state.connected = true; updateConnection(); refresh();
   });
-  current.addEventListener('message', () => { if (socket !== current) return; if (state.page === 'admin') { const control = document.querySelector('[data-action=refresh-admin]'); if (control) control.textContent = 'Updates available · Refresh'; return; } clearTimeout(refreshTimeout); refreshTimeout = setTimeout(refresh, 80); });
+  current.addEventListener('message', event => { const message=JSON.parse(event.data); if(message.type==='chat'){if(message.roomId===state.roomId)refreshChat();return;} if (socket !== current) return; if (state.page === 'admin') { const control = document.querySelector('[data-action=refresh-admin]'); if (control) control.textContent = 'Updates available · Refresh'; return; } clearTimeout(refreshTimeout); refreshTimeout = setTimeout(refresh, 80); });
   current.addEventListener('close', () => {
     if (socket !== current) return;
     state.connected = false; updateConnection();
@@ -314,7 +290,8 @@ function updateTimer() {
   document.querySelectorAll('[data-deadline]').forEach(el => {
     const secs=Math.max(0,Math.ceil((Number(el.dataset.deadline)-Date.now()-serverClockOffset)/1000));
     const paused=state.room?.status==='paused';
-    el.textContent=paused?'Paused':`${secs}s`;
+    const p=state.room?.state?.presentation,now=Date.now()+serverClockOffset;
+    el.textContent=paused?'Paused':p&&now>=p.minimumUntil?(p.manual?'Your pace':`${Math.max(0,Math.ceil((p.maximumUntil-now)/1000))}s`):`${secs}s`;
     el.classList.toggle('time-short',!paused && secs<=8);
     el.setAttribute('aria-label',paused?'Timer paused':`${secs} seconds remaining`);
   });
@@ -348,7 +325,7 @@ function createTable(game) {
     <div class="form-pair"><label>Seats<select name="capacity">${Array.from({length:7-minimumSeats},(_,i)=>i+minimumSeats).map(n=>`<option value="${n}" ${n===6?'selected':''}>${n}</option>`).join('')}</select></label>${stake}</div>
     ${!event?`<label>Bots<select name="bots"><option value="0">None</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>`:''}
     ${game==='poker'?'<details class="setup-options"><summary>Set blinds</summary><div class="form-pair"><label>Small blind<input name="smallBlind" type="number" min="1" max="99999" placeholder="Auto"></label><label>Big blind<input name="bigBlind" type="number" min="2" max="100000" placeholder="Auto"></label></div></details>':''}
-    <label class="check"><input type="checkbox" name="private"> Private table · invite link required</label>
+    <div class="form-pair"><label>Table pace<select name="pace"><option value="relaxed">Relaxed</option><option value="standard" selected>Standard</option><option value="quick">Quick</option></select></label><label class="check"><input type="checkbox" name="manualResults" checked> Wait for me after solo results</label></div><label class="check"><input type="checkbox" name="private"> Private table · invite link required</label>
     <p class="form-error" role="alert"></p><button class="primary">Create table</button>
   </form>`);
 }
@@ -421,14 +398,20 @@ document.addEventListener('click', async event => {
     else if (action === 'bluff-skip') await submitAction({type:'skip'});
     else if (action === 'play-cards') await submitAction({ type: 'play', cards: [...state.selected], ...(state.room.game === 'chromatic' ? { color: document.querySelector('#wild-color')?.value } : {rank:document.querySelector('#bluff-rank')?.value}) });
     else if (action === 'special-action') {
+      if(button.dataset.move==='declare'){
+        const discard=[...state.selected][0];if(!discard)return;
+        await submitAction({type:'analyze',cards:[discard]});const g=state.room.state;
+        openModal('Check your declaration',`<div class="declaration-preview"><strong>${g.analysis?.valid?'Your groups are valid':'This hand is not ready to declare'}</strong><div class="meld-strip">${(g.analysis?.groups||[]).map(group=>`<div><strong>${({pure:'Pure sequence',sequence:'Sequence',set:'Set'})[group.kind]}</strong>${group.cards.map(id=>g.hand.find(c=>c.id===id)).filter(Boolean).map(c=>esc(c.rank+' '+c.suit)).join(' · ')}</div>`).join('')}</div><p>Discarding ${esc(g.hand.find(c=>c.id===discard)?.rank||'')} · ${g.analysis?.penalty||0} penalty points</p><button class="primary" data-action="confirm-declaration" data-id="${esc(discard)}" ${g.analysis?.valid?'':'disabled'}>Declare hand</button></div>`);return;
+      }
       const amount=document.querySelector('#bet-amount');
       if(button.dataset.move==='raise' && amount && !amount.reportValidity())return;
       await submitAction({type:button.dataset.move,cards:[...state.selected],source:button.dataset.source,amount:Number(button.dataset.amount ?? amount?.value ?? document.querySelector('#bid-amount')?.value)});
     }
     else if (action === 'chromatic-action') await submitAction({type:button.dataset.move,target:button.dataset.target,color:document.querySelector('#wild-color')?.value});
+    else if(action==='confirm-declaration'){await submitAction({type:'declare',cards:[button.dataset.id]});modal.close();}
     else if (action === 'draw-card') await submitAction({ type: 'draw' });
     else if (action === 'challenge') await submitAction({ type: 'challenge' });
-    else if (action === 'mute') { audioPrefs.muted = !audioPrefs.muted; localStorage.setItem('venatus-sound', JSON.stringify(audioPrefs)); button.textContent = `Sound ${audioPrefs.muted ? 'off' : 'on'}`; button.setAttribute('aria-label', `${audioPrefs.muted ? 'Unmute' : 'Mute'} sound`); sound(); }
+    else if (action === 'mute') { audioPrefs.muted = !getMix().muted; setMix({muted:audioPrefs.muted}); localStorage.setItem('venatus-sound', JSON.stringify(audioPrefs)); button.textContent = `Sound ${audioPrefs.muted ? 'off' : 'on'}`; button.setAttribute('aria-label', `${audioPrefs.muted ? 'Unmute' : 'Mute'} sound`); sound(); }
     else if(action==='configure-event') {
       const e=state.admin.events.find(e=>e.id===button.dataset.id);
       const date=n=>{if(!n)return '';const d=new Date(n);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);};
@@ -464,7 +447,7 @@ document.addEventListener('submit', async event => {
         toast('Account saved. You can sign in on another device.');
       } finally {savingAccount=false;connect();await refresh();}
     } else if (form.id === 'create-table-form') {
-      const result = await api('/api/tables', { name: values.get('name'), game: values.get('game'), stake: Number(values.get('stake')), private: values.has('private'), context: state.context, capacity: Number(values.get('capacity')||6), ...(values.get('smallBlind')?{smallBlind:Number(values.get('smallBlind'))}:{}), ...(values.get('bigBlind')?{bigBlind:Number(values.get('bigBlind'))}:{}), bots: Number(values.get('bots') || 0), practice: state.context==='casual' });
+      const result = await api('/api/tables', { name: values.get('name'), game: values.get('game'), stake: Number(values.get('stake')), private: values.has('private'), context: state.context, capacity: Number(values.get('capacity')||6), ...(values.get('smallBlind')?{smallBlind:Number(values.get('smallBlind'))}:{}), ...(values.get('bigBlind')?{bigBlind:Number(values.get('bigBlind'))}:{}), bots: Number(values.get('bots') || 0), pace:values.get('pace')||'standard', manualResults:values.has('manualResults'), practice: state.context==='casual' });
       modal.close(); await enterRoom(result.id || result.table?.id);
     } else if (form.id === 'join-code-form') {
       modal.close(); await joinByCode(String(values.get('code')).trim().toUpperCase());
@@ -529,6 +512,9 @@ async function joinInvitation() {
   catch (error) { toast(error.message); }
 }
 async function boot() {
+  installAudio();installControls({sound});
+  installProfiles({api,openModal,toast,getUser:()=>state.user,onSaved:async profile=>{Object.assign(state.user,{name:profile.displayName,avatar:profile.avatar});render();await refresh();}});
+  installLounge({api,openModal,toast,card,submitAction,getState:()=>state});
   try { const me = await api('/api/me'); state.user = me.user; state.setupRequired = me.setupRequired; if (state.user) { restoreSeat(me); await refresh(); connect(); await joinInvitation(); } else { renderAuth(); } }
   catch (error) { app.innerHTML = `<main class="initial">${brand()}<h2>The card room is resting.</h2><p>${esc(error.message)}</p><button data-action="reload">Try again</button></main>`; }
 }

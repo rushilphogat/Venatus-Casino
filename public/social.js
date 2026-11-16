@@ -1,4 +1,6 @@
 import { handTools, renderHand } from './experience.js';
+import {portrait} from './profiles.js';
+import {toolbar,presentationControls} from './lounge.js';
 
 const colours = { ruby:'Ruby', emerald:'Emerald', sapphire:'Sapphire', gold:'Gold' };
 const colourName = key => colours[key] || 'Choose a colour';
@@ -10,6 +12,7 @@ function colourChoices(game, action) {
 
 function colorControls(room, ui) {
   const g = room.state, own = g.turn === ui.state.user.id;
+  if(g.presentation)return presentationControls(room,ui.state.user.id);
   if (g.phase === 'round-end') return '<button class="primary" data-action="chromatic-action" data-move="next-round">Deal next round</button>';
   if (g.phase === 'choose-color') return own ? colourChoices(g,'starting-colour') : '';
   const moves = [];
@@ -31,6 +34,7 @@ function colorControls(room, ui) {
 
 function bluffControls(room, ui) {
   const g = room.state, viewer = ui.state.user.id;
+  if(g.presentation)return presentationControls(room,viewer);
   if (g.phase === 'challenge') return g.lastPlay?.player !== viewer ? '<button class="challenge-button" data-action="challenge">Call bluff</button>' : '';
   if (g.turn !== viewer) return '';
   const count = ui.state.selected.size;
@@ -44,7 +48,7 @@ function bluffCenter(g, ui) {
   if (verdict?.cards?.length) return `<div class="bluff-verdict social-verdict" data-pile>
     <div class="revealed-cards">${verdict.cards.map(c => card(c)).join('')}</div>
     <div><small>${name(verdict.challenger)} called bluff</small><h3>${verdict.lied?'Caught bluffing':'An honest claim'}</h3>
-    <p>${name(verdict.collector)} takes the pile.</p></div></div>`;
+    <p>${name(verdict.collector)} takes ${verdict.collectedCount||verdict.count||verdict.cards.length} cards.</p></div></div>`;
   const claim = g.lastPlay;
   const count = g.pileCount || 0;
   return `<div class="bluff-center"><div class="bluff-stack" data-pile>${count ? Array.from({length:Math.min(3,count)},()=>card(null)).join('') : '<span>Empty pile</span>'}</div>
@@ -68,6 +72,7 @@ function turnInfo(room, ui) {
   if (g.phase === 'finished') return [g.winner ? `${ui.name(g.winner)} wins` : 'Draw', room.practice ? '' : `${ui.fmt(room.pot)} chips settled`];
   if (g.phase === 'round-end') return [`${ui.name(g.roundWinner)} wins round ${g.round}`, `+${g.roundPoints} points · first to ${g.targetScore}`];
   if (room.game==='bluff') {
+    if(g.phase==='reveal')return [g.reveal?.lied?'Bluff exposed':'Honest claim','Take a look at the cards.'];
     if (g.phase==='challenge') return [g.lastPlay.player === ui.state.user.id ? 'Waiting for challenges' : 'Challenge this claim?', ''];
     return [own?'Your turn':`${ui.name(g.turn)}’s turn`, own && !g.requiredRank ? 'Choose a rank and 1–4 cards.' : ''];
   }
@@ -89,7 +94,7 @@ export function socialRoom(room, ui) {
   return `${ui.header()}<main class="layout game-room social-room game-${room.game} ink-${colours[g.activeColor]?g.activeColor:'neutral'}">
     <div class="room-top"><div><button class="subtle" data-action="navigate" data-page="lobby">← Lobby</button><div class="eyebrow">${ui.gameName(room.game)} · ${room.practice?'Casual table':'Event table'}</div><h2>${ui.esc(room.name)}</h2></div>
     <div class="room-meta">${room.practice?'':`<span>Pot <b>${ui.fmt(room.pot)}</b></span>`}<button class="subtle" data-action="rules" data-game="${room.game}">Rules</button><button data-action="leave-table">Leave table</button></div></div>
-    <section class="social-mat" aria-label="${ui.gameName(room.game)} table"><ul class="social-seats">${room.players.map(p => `<li data-seat="${ui.esc(p.id)}" class="${g.turn === p.id && !over ? 'seat-active':''}"><b>${name(p.id)}${p.id===viewer?' · You':''}</b><span>${p.left?'Autoplay · ':p.bot?'Bot · ':p.online===false && p.id!==viewer?'Offline · ':''}${g.counts[p.id]} cards${!bluff && g.scores?` · ${g.scores[p.id]} pts`:''}</span></li>`).join('')}</ul>
+    ${toolbar()}<section class="social-mat" aria-label="${ui.gameName(room.game)} table"><ul class="social-seats">${room.players.map(p => `<li data-seat="${ui.esc(p.id)}" class="${g.turn === p.id && !over ? 'seat-active':''}">${portrait(p)}<b>${name(p.id)}${p.id===viewer?' · You':''}</b><span>${p.left?'Autoplay · ':p.bot?'Bot · ':p.online===false && p.id!==viewer?'Offline · ':''}${g.counts[p.id]} cards${!bluff && g.scores?` · ${g.scores[p.id]} pts`:''}</span></li>`).join('')}</ul>
     ${bluff?bluffCenter(g,h):colorCenter(g,h,own && g.phase==='play')}${!bluff&&g.round?`<div class="social-caption">Round ${g.round} · ${g.targetScore} points to win</div>`:''}</section>
     <div class="social-turn" role="status"><div><strong>${lead}</strong>${detail?`<p>${detail}</p>`:''}</div>${g.deadline && live ? `<span class="timer" data-deadline="${g.deadline}"></span>`:''}</div>
     ${g.evidence?`<details><summary>View private challenge evidence</summary><p>${g.evidence.illegal?'A matching colour was held.':'The wild draw four was legal.'}</p><div class="revealed-cards">${g.evidence.cards.map(c=>ui.card(c)).join('')}</div></details>`:''}

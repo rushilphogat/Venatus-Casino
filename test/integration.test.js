@@ -200,6 +200,14 @@ test('Oh Hell completes nine rounds over HTTP with private hands and exact payou
   for(let n=0;n<300&&r.status==='playing';n++){
     const p=g.players.find(p=>p.id===r.state.turn);r=await g.view(p);const s=r.state;
     assert.equal(s.hands,undefined);
+    if(['trick-end','round-end'].includes(s.phase)){
+      const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
+      stored.state.deadline=Date.now()-1;
+      if(stored.state.presentation){stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;}
+      await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),r.id);
+      for(let wait=0;wait<100;wait++){await new Promise(resolve=>setTimeout(resolve,10));r=await g.view(p);if(r.state.phase!==s.phase)break;}
+      assert.notEqual(r.state.phase,s.phase,'presentation should advance at its maximum');continue;
+    }
     await g.act(p,s.phase==='round-end'?{type:'next-round'}:s.phase==='bid'?{type:'bid',amount:s.legalBids[0]}:{type:'play',cards:[s.legalCardIds[0]]});
     r=await g.view(p);
   }
@@ -220,20 +228,20 @@ test('Rummy HTTP draw, analysis, discard, drop and settlement keep hands private
   assert.deepEqual((await f.ok('/api/lobby',other.cookie)).wallet,{available:9900,reserved:0});
 });
 
-test('match safety limit refunds stuck matches once', async t => {
+test('active matches survive the former one-hour limit and cancel settles once', async t => {
   const f = await fixture(t);
   const a = await f.account('Timeout Alice'), b = await f.account('Timeout Bob');
   const r = await f.ok('/api/tables', a.cookie, { name: 'Long match', game: 'chromatic', stake: 100, context: 'casual' });
   await f.ok(`/api/tables/${r.id}/join`, b.cookie, {});
   await f.ok(`/api/tables/${r.id}/start`, a.cookie, {});
   const stored = JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(r.id)).data);
-  stored.started = Date.now() - 3600001;
+  stored.started = Date.now() - 7200001;
   (await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored), r.id));
   for (let n=0;n<30;n++) {
     if ((await f.ok(`/api/tables/${r.id}`, a.cookie)).status === 'canceled') break;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
-  assert.equal((await f.ok(`/api/tables/${r.id}`, a.cookie)).status, 'canceled');
+  assert.equal((await f.ok(`/api/tables/${r.id}`, a.cookie)).status, 'playing');
   await f.ok(`/api/admin/table/${r.id}`, f.owner.cookie, { operation: 'cancel' });
   for (const p of [a,b]) assert.deepEqual((await f.ok('/api/lobby', p.cookie)).wallet, { available: 10000, reserved: 0 });
 });
@@ -531,6 +539,12 @@ test('complete Chromatic match through HTTP legal actions conserves chips and pe
     const playable = own.state.hand.find(c => own.state.legalCardIds?.includes(c.id));
     const color = own.state.colors.reduce((best, candidate) => own.state.hand.filter(c => c.color === candidate).length > own.state.hand.filter(c => c.color === best).length ? candidate : best, own.state.colors[0]);
     const phase = own.state.phase;
+    if(phase==='round-end'){
+      const stored=JSON.parse((await f.db.prepare('SELECT data FROM rooms WHERE id=?').get(table.id)).data);stored.state.deadline=Date.now()-1;stored.state.presentation.minimumUntil=Date.now()-2;stored.state.presentation.maximumUntil=Date.now()-1;stored.state.presentation.manual=false;
+      await f.db.prepare('UPDATE rooms SET data=? WHERE id=?').run(JSON.stringify(stored),table.id);
+      for(let wait=0;wait<100;wait++){await new Promise(resolve=>setTimeout(resolve,10));snapshot=await f.ok(`/api/tables/${table.id}`,player.cookie);if(snapshot.state.phase!==phase)break;}
+      assert.notEqual(snapshot.state.phase,phase);continue;
+    }
     const action = phase === 'round-end' ? {type:'next-round'} : phase === 'choose-color' ? {type:'choose-color',color} : phase === 'challenge' ? {type:'accept'} : playable ? { type: 'play', cards: [playable.id], color, declare:true } : {type:phase==='drawn'?'pass':'draw'};
     snapshot = await f.ok(`/api/tables/${table.id}/action`, player.cookie, { actionId: randomUUID(), expectedVersion: own.version, action });
   }

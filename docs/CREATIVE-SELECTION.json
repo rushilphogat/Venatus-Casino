@@ -1,0 +1,725 @@
+{
+  "comments": [
+    {
+      "id": "0-poker_01",
+      "game": "poker",
+      "trigger": "round_start",
+      "text": "Fresh felt. Same suspicious silence."
+    },
+    {
+      "id": "0-poker_04",
+      "game": "poker",
+      "trigger": "public_all_in",
+      "text": "Well, that escalated neatly."
+    },
+    {
+      "id": "0-poker_09",
+      "game": "poker",
+      "trigger": "split_pot",
+      "text": "An unusually diplomatic outcome."
+    },
+    {
+      "id": "0-poker_10",
+      "game": "poker",
+      "trigger": "split_pot",
+      "text": "The pot believes in compromise."
+    },
+    {
+      "id": "0-bluff_04",
+      "game": "bluff",
+      "trigger": "bluff_caught",
+      "text": "The evidence has entered the room."
+    },
+    {
+      "id": "0-bluff_06",
+      "game": "bluff",
+      "trigger": "bluff_caught",
+      "text": "The paper trail disagreed."
+    },
+    {
+      "id": "0-bluff_10",
+      "game": "bluff",
+      "trigger": "honest_claim",
+      "text": "The cards confirm the testimony."
+    },
+    {
+      "id": "0-chromatic_01",
+      "game": "chromatic",
+      "trigger": "round_start",
+      "text": "Four colors. Several opinions."
+    },
+    {
+      "id": "0-chromatic_03",
+      "game": "chromatic",
+      "trigger": "draw_stack",
+      "text": "That stack has developed a personality."
+    },
+    {
+      "id": "0-chromatic_07",
+      "game": "chromatic",
+      "trigger": "reverse",
+      "text": "A very civilized U-turn."
+    },
+    {
+      "id": "0-chromatic_08",
+      "game": "chromatic",
+      "trigger": "reverse",
+      "text": "The arrow has changed its mind."
+    },
+    {
+      "id": "0-chromatic_12",
+      "game": "chromatic",
+      "trigger": "rematch",
+      "text": "Time to rearrange the rainbow."
+    },
+    {
+      "id": "0-rummy_02",
+      "game": "rummy",
+      "trigger": "round_start",
+      "text": "Thirteen little possibilities."
+    },
+    {
+      "id": "0-rummy_03",
+      "game": "rummy",
+      "trigger": "valid_declaration",
+      "text": "Everything in its proper place."
+    },
+    {
+      "id": "0-rummy_07",
+      "game": "rummy",
+      "trigger": "public_win",
+      "text": "A tidy ending. Very satisfying."
+    },
+    {
+      "id": "0-rummy_11",
+      "game": "rummy",
+      "trigger": "rematch",
+      "text": "Another chance to make things click."
+    },
+    {
+      "id": "0-ohhell_02",
+      "game": "ohhell",
+      "trigger": "round_start",
+      "text": "The future has declined to comment."
+    },
+    {
+      "id": "0-ohhell_04",
+      "game": "ohhell",
+      "trigger": "exact_bid",
+      "text": "The numbers shook hands."
+    },
+    {
+      "id": "0-ohhell_06",
+      "game": "ohhell",
+      "trigger": "exact_bid",
+      "text": "The arithmetic approves."
+    },
+    {
+      "id": "1-poker_03",
+      "game": "poker",
+      "trigger": "public_all_in",
+      "text": "The whole stack has spoken."
+    },
+    {
+      "id": "1-poker_05",
+      "game": "poker",
+      "trigger": "public_win",
+      "text": "A neat finish for that hand."
+    },
+    {
+      "id": "1-poker_06",
+      "game": "poker",
+      "trigger": "public_win",
+      "text": "The result is written in ink."
+    },
+    {
+      "id": "1-poker_10",
+      "game": "poker",
+      "trigger": "split_pot",
+      "text": "A pot with more than one destination."
+    },
+    {
+      "id": "1-poker_11",
+      "game": "poker",
+      "trigger": "rematch",
+      "text": "Same table, fresh ink."
+    },
+    {
+      "id": "1-bluff_04",
+      "game": "bluff",
+      "trigger": "bluff_caught",
+      "text": "The cards tell a different story."
+    },
+    {
+      "id": "1-bluff_06",
+      "game": "bluff",
+      "trigger": "honest_claim",
+      "text": "The claim checks out."
+    },
+    {
+      "id": "1-bluff_07",
+      "game": "bluff",
+      "trigger": "honest_claim",
+      "text": "Truth, neatly folded."
+    },
+    {
+      "id": "1-bluff_12",
+      "game": "bluff",
+      "trigger": "rematch",
+      "text": "Straight faces, fresh paper."
+    },
+    {
+      "id": "1-chromatic_05",
+      "game": "chromatic",
+      "trigger": "draw_stack",
+      "text": "One more layer to the pile."
+    },
+    {
+      "id": "1-chromatic_07",
+      "game": "chromatic",
+      "trigger": "reverse",
+      "text": "Other way around, then."
+    },
+    {
+      "id": "1-chromatic_09",
+      "game": "chromatic",
+      "trigger": "one_card",
+      "text": "Just one card left in the wings."
+    },
+    {
+      "id": "1-chromatic_11",
+      "game": "chromatic",
+      "trigger": "public_win",
+      "text": "The final card has landed."
+    },
+    {
+      "id": "1-rummy_03",
+      "game": "rummy",
+      "trigger": "valid_declaration",
+      "text": "The declaration holds."
+    },
+    {
+      "id": "1-rummy_06",
+      "game": "rummy",
+      "trigger": "valid_declaration",
+      "text": "The layout passes inspection."
+    },
+    {
+      "id": "1-rummy_08",
+      "game": "rummy",
+      "trigger": "public_win",
+      "text": "The table signs off."
+    },
+    {
+      "id": "1-ohhell_03",
+      "game": "ohhell",
+      "trigger": "exact_bid",
+      "text": "The prediction landed exactly."
+    },
+    {
+      "id": "1-ohhell_05",
+      "game": "ohhell",
+      "trigger": "exact_bid",
+      "text": "Right on the number."
+    },
+    {
+      "id": "1-ohhell_10",
+      "game": "ohhell",
+      "trigger": "public_win",
+      "text": "A fitting end to the count."
+    },
+    {
+      "id": "1-ohhell_11",
+      "game": "ohhell",
+      "trigger": "rematch",
+      "text": "Another forecast, another chance."
+    }
+  ],
+  "scenes": [
+    {
+      "id": "fan",
+      "family": "poker_showdown",
+      "name": "The Felt Unfolds",
+      "durationMs": 2300,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "The ink-blue felt darkens slightly. Only legally revealed hole cards and community cards remain face-up; mucked hands stay hidden.",
+          "audio": "One soft felt-brush sound."
+        },
+        {
+          "timestampMs": 450,
+          "visual": "Warm-paper outlines trace evaluated combinations using only publicly revealed cards and suits.",
+          "audio": "Two quiet paper taps."
+        },
+        {
+          "timestampMs": 1050,
+          "visual": "Separate paper tabs unfold for the main pot and each actual side pot. Stationary chip tokens identify sections.",
+          "audio": "Muted wooden ticks."
+        },
+        {
+          "timestampMs": 1750,
+          "visual": "Each tab receives its actual recipients, awarded amounts and split shares; mint underlines settle into a static layout.",
+          "audio": "One restrained rounded chime."
+        }
+      ],
+      "resultHoldMs": 7500,
+      "postAnimationResult": "Hold each resolved pot outcome and public showdown cards for 7500ms. Never merge distinct main-pot and side-pot winners.",
+      "reducedMotionAlternative": "Show the completed static showdown immediately, with separate labeled pots and revealed cards.",
+      "motif": "fan",
+      "source": "response-7"
+    },
+    {
+      "id": "ledger",
+      "family": "poker_showdown",
+      "name": "The Velvet Ledger",
+      "durationMs": 2400,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Authorized showdown cards settle on ink-blue felt, warm paper edges casting shallow flat shadows. Fixed camera.",
+          "audio": "Soft overlapping card taps."
+        },
+        {
+          "timestampMs": 520,
+          "visual": "A coral line sketches a ruled ledger with a separate section for every resolved pot and side pot.",
+          "audio": "Dry pencil stroke."
+        },
+        {
+          "timestampMs": 1280,
+          "visual": "Each pot section receives only its verified winner or co-winner portrait frames. Chip tokens stay beside their actual pot totals.",
+          "audio": "Spaced, gentle paper taps."
+        },
+        {
+          "timestampMs": 1950,
+          "visual": "The ledger becomes the existing result panel, showing individual pot allocations, splits, and hand rankings.",
+          "audio": "Muted wooden click."
+        }
+      ],
+      "reducedMotionAlternative": "Show the authorized cards and static per-pot ledger immediately, with a seven-second result hold.",
+      "motif": "ledger",
+      "source": "response-original"
+    },
+    {
+      "id": "constellation",
+      "family": "poker_showdown",
+      "name": "Quiet Constellation",
+      "durationMs": 2150,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Tiny low-contrast suit symbols appear around the ink-blue table perimeter; cards and portraits stay fixed.",
+          "audio": "Soft airy swell."
+        },
+        {
+          "timestampMs": 450,
+          "visual": "Fine dots connect into a decorative arc above the publicly revealed community cards, never implying hidden holdings.",
+          "audio": "Two wooden taps."
+        },
+        {
+          "timestampMs": 1050,
+          "visual": "The arc divides into independent pot frames beside stationary chip-token illustrations.",
+          "audio": "Muted paper fold."
+        },
+        {
+          "timestampMs": 1650,
+          "visual": "Resolved recipients and amounts appear separately for each pot; dotted mint and violet accents become still.",
+          "audio": "Single warm resolving note."
+        }
+      ],
+      "resultHoldMs": 7500,
+      "postAnimationResult": "Hold all independently resolved pots, split recipients and official amounts for 7500ms.",
+      "reducedMotionAlternative": "Show resolved pot frames immediately with a static border of small suit symbols.",
+      "motif": "constellation",
+      "source": "response-7"
+    },
+    {
+      "id": "thread",
+      "family": "bluff_caught",
+      "name": "The Red Thread",
+      "durationMs": 1850,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "After a completed challenge, publicly exposed disputed cards appear beside the challenged rank.",
+          "audio": "Quiet card tap."
+        },
+        {
+          "timestampMs": 400,
+          "visual": "A thin coral line traces from the claim label to the exposed contradictory evidence.",
+          "audio": "Dry pencil stroke."
+        },
+        {
+          "timestampMs": 950,
+          "visual": "The thread curls into a small question mark; the existing animal portrait frame tilts two pixels.",
+          "audio": "Tiny wooden creak."
+        },
+        {
+          "timestampMs": 1450,
+          "visual": "The mark settles beside a 'Bluff caught' verdict; exposed cards remain unobstructed.",
+          "audio": "Soft hollow plunk."
+        }
+      ],
+      "resultHoldMs": 7000,
+      "postAnimationResult": "Keep the claim, public evidence and existing rule-determined challenge result readable for 7000ms.",
+      "reducedMotionAlternative": "Show the cards, verdict and stationary coral-thread illustration at once.",
+      "motif": "thread",
+      "source": "response-7"
+    },
+    {
+      "id": "stamp",
+      "family": "bluff_caught",
+      "name": "The Wobbly Seal",
+      "durationMs": 2000,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "A hand-cut coral seal with the public rank sits above the challenged cards.",
+          "audio": "Tiny paper placement."
+        },
+        {
+          "timestampMs": 450,
+          "visual": "Authorized cards are revealed; the verified mismatch makes the seal tilt gently eight degrees.",
+          "audio": "Soft card flip and hollow pluck."
+        },
+        {
+          "timestampMs": 1050,
+          "visual": "One seal corner peels upward to reveal a small ink question mark without obscuring the evidence.",
+          "audio": "Short paper peel."
+        },
+        {
+          "timestampMs": 1600,
+          "visual": "The seal rests beside the challenge result panel; exposed faces remain fully readable.",
+          "audio": "Light cork tap."
+        }
+      ],
+      "reducedMotionAlternative": "Keep the seal statically tilted beside the authorized revealed cards and result.",
+      "motif": "stamp",
+      "source": "response-original"
+    },
+    {
+      "id": "ink",
+      "family": "bluff_caught",
+      "name": "The Ink Blot",
+      "durationMs": 2200,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Exposed challenge cards rest in a warm-paper tray below the challenged rank.",
+          "audio": "Soft card-placement tap."
+        },
+        {
+          "timestampMs": 500,
+          "visual": "A tiny coral blot grows in the empty margin, clear of ranks and suit marks.",
+          "audio": "Gentle liquid-like pop."
+        },
+        {
+          "timestampMs": 1050,
+          "visual": "The blot forms a hand-inked magnifying glass pointed at publicly revealed contradictory evidence.",
+          "audio": "Faint glassy tick."
+        },
+        {
+          "timestampMs": 1700,
+          "visual": "The magnifier shrinks into static art; a verdict strip shows the actual challenge resolution.",
+          "audio": "Soft low wooden note."
+        }
+      ],
+      "resultHoldMs": 7000,
+      "postAnimationResult": "Keep claim, public evidence and challenge outcome readable for 7000ms without obscuring card ranks.",
+      "reducedMotionAlternative": "Show a stationary magnifier illustration and the finished evidence panel.",
+      "motif": "ink",
+      "source": "response-7"
+    },
+    {
+      "id": "seal",
+      "family": "honest_claim",
+      "name": "The Mint Seal",
+      "durationMs": 1800,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "After a completed challenge verifies the claim, exposed cards remain face-up beside the original rank.",
+          "audio": "Delicate card tap."
+        },
+        {
+          "timestampMs": 350,
+          "visual": "A thin mint circle draws in an empty seal space beside the claim.",
+          "audio": "Pencil-circle sound."
+        },
+        {
+          "timestampMs": 850,
+          "visual": "A paper leaf settles into the seal, followed by a compact 'Verified' label.",
+          "audio": "Warm cork-like pop."
+        },
+        {
+          "timestampMs": 1350,
+          "visual": "The seal becomes still; the claimant's existing portrait frame gains a mint outline.",
+          "audio": "Soft bell-like note."
+        }
+      ],
+      "resultHoldMs": 7500,
+      "postAnimationResult": "Hold verified rank, exposed cards and actual challenge outcome for 7500ms; never trigger on an unchallenged claim.",
+      "reducedMotionAlternative": "Show the exposed evidence and static mint verification seal immediately.",
+      "motif": "seal",
+      "source": "response-7"
+    },
+    {
+      "id": "receipt",
+      "family": "honest_claim",
+      "name": "The Paper Receipt",
+      "durationMs": 2400,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "A narrow ruled paper slip slides below the authorized revealed cards, with no paragraph text.",
+          "audio": "Paper sliding on wood."
+        },
+        {
+          "timestampMs": 650,
+          "visual": "The slip compares the public claimed rank with its verified match; two mint ink dots appear.",
+          "audio": "Two quiet pencil ticks."
+        },
+        {
+          "timestampMs": 1350,
+          "visual": "The slip folds once across a simple horizontal crease, displaying a mint check symbol.",
+          "audio": "Soft paper crease."
+        },
+        {
+          "timestampMs": 1950,
+          "visual": "The folded receipt rests next to the honest-claim result; cards and claimed rank stay unobstructed.",
+          "audio": "Tiny paper landing."
+        }
+      ],
+      "reducedMotionAlternative": "Show the unfolded static comparison slip and revealed evidence with the final result.",
+      "motif": "receipt",
+      "source": "response-original"
+    },
+    {
+      "id": "garden",
+      "family": "honest_claim",
+      "name": "The Truth Garden",
+      "durationMs": 2200,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Authorized revealed cards appear; a mint ink line underlines the public claim seal.",
+          "audio": "Pencil on paper."
+        },
+        {
+          "timestampMs": 550,
+          "visual": "Three small mint leaves unfold from the underline like flat bookplate ornaments.",
+          "audio": "Soft leaf rustles."
+        },
+        {
+          "timestampMs": 1200,
+          "visual": "A static hand-inked hedgehog illustration appears in a small portrait-style border frame, without rigging.",
+          "audio": "Single warm wooden tap."
+        },
+        {
+          "timestampMs": 1750,
+          "visual": "Leaves stop moving and border the honest-claim result, leaving the verified evidence clear.",
+          "audio": "Paper settling."
+        }
+      ],
+      "reducedMotionAlternative": "Show the full mint ornament, static hedgehog and authorized cards with the result.",
+      "motif": "garden",
+      "source": "response-original"
+    },
+    {
+      "id": "ribbon",
+      "family": "chromatic_finish",
+      "name": "The Color Ribbon",
+      "durationMs": 2300,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Only after verified game completion, the last publicly played card rests on ink-blue felt. Its actual face and color remain unchanged.",
+          "audio": "Crisp card placement."
+        },
+        {
+          "timestampMs": 550,
+          "visual": "Four thin strips of coral, mint, violet and pale gold unfold from beneath the card like flat paper ribbons.",
+          "audio": "Layered paper rustle."
+        },
+        {
+          "timestampMs": 1200,
+          "visual": "Ribbons curve into an oval without covering the card. The winner portrait frame receives a matching paper border.",
+          "audio": "Gentle elastic-paper sound."
+        },
+        {
+          "timestampMs": 1850,
+          "visual": "Ribbons rest against the felt; verified winner and final game result appear beneath the card.",
+          "audio": "Light wooden click."
+        }
+      ],
+      "reducedMotionAlternative": "Show the final public card, static ribbon border and verified result without movement.",
+      "motif": "ribbon",
+      "source": "response-original"
+    },
+    {
+      "id": "corners",
+      "family": "chromatic_finish",
+      "name": "The Folded Corners",
+      "durationMs": 1900,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "The verified final card stands upright on a warm-paper mat with four colored corner decorations outside its face.",
+          "audio": "Single card tap."
+        },
+        {
+          "timestampMs": 400,
+          "visual": "Decorative corners fold inward a few pixels in one smooth simultaneous movement, with no flashes.",
+          "audio": "Soft paper creases."
+        },
+        {
+          "timestampMs": 950,
+          "visual": "A violet line draws a scalloped border around the winner's existing hand-inked animal portrait frame.",
+          "audio": "Short ink-brush stroke."
+        },
+        {
+          "timestampMs": 1450,
+          "visual": "The corner decorations stop; final card and verified winner result remain centered and legible.",
+          "audio": "Muted wooden tap."
+        }
+      ],
+      "reducedMotionAlternative": "Display the final card, already-folded corners, winner portrait and result statically.",
+      "motif": "corners",
+      "source": "response-original"
+    },
+    {
+      "id": "palette",
+      "family": "chromatic_finish",
+      "name": "The Sleeping Palette",
+      "durationMs": 2500,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Four small flat ink puddles occupy the corners of the resolved tableau; the final public card stays still at center.",
+          "audio": "Four quiet brush dabs."
+        },
+        {
+          "timestampMs": 650,
+          "visual": "The ink puddles contract into clean circular dots, as though soaking into textured paper.",
+          "audio": "Soft paper absorption."
+        },
+        {
+          "timestampMs": 1350,
+          "visual": "Dots arrange into a decorative diamond beside the verified winner portrait; other players' cards and portraits remain unchanged.",
+          "audio": "Soft ceramic-like clink."
+        },
+        {
+          "timestampMs": 2050,
+          "visual": "The diamond stops. The existing result panel expands into the cleared center area without masking the last card.",
+          "audio": "Low-volume wooden knock."
+        }
+      ],
+      "reducedMotionAlternative": "Show the four-dot diamond, static final card and verified winner result.",
+      "motif": "palette",
+      "source": "response-original"
+    },
+    {
+      "id": "laurel",
+      "family": "round_win",
+      "name": "The Paper Laurel",
+      "durationMs": 2100,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Resolved scores fill a warm-paper result sheet against ink-blue felt. All verified winner portraits appear, including ties.",
+          "audio": "Soft paper placement."
+        },
+        {
+          "timestampMs": 500,
+          "visual": "Two thin mint laurel branches draw around every winner portrait frame, like bookplate illustrations.",
+          "audio": "Gentle brush strokes."
+        },
+        {
+          "timestampMs": 1150,
+          "visual": "Small paper leaves unfold. All portrait frames stay stationary; losing portraits do not dim or vanish.",
+          "audio": "Restrained paper rustle."
+        },
+        {
+          "timestampMs": 1650,
+          "visual": "The laurel becomes a static margin; actual winners and scores remain unobstructed.",
+          "audio": "Quiet cork tap."
+        }
+      ],
+      "reducedMotionAlternative": "Show a static result sheet with mint laurel borders around all confirmed winners.",
+      "motif": "laurel",
+      "source": "response-original"
+    },
+    {
+      "id": "stars",
+      "family": "round_win",
+      "name": "The Ink Constellation",
+      "durationMs": 2400,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "A resolved result sheet displays pale-violet ink dots above the verified winner portrait frames.",
+          "audio": "Faint pencil touches."
+        },
+        {
+          "timestampMs": 650,
+          "visual": "Thin hand-drawn lines join the dots into geometric constellations, with constant low brightness and no flashes.",
+          "audio": "Quiet pencil stroke."
+        },
+        {
+          "timestampMs": 1350,
+          "visual": "A tiny flat paper moon softly appears beside each constellation; all elements remain decorative.",
+          "audio": "One soft glass-like tick."
+        },
+        {
+          "timestampMs": 1950,
+          "visual": "Constellations become faint static ornaments. Scores and winner names retain visual priority.",
+          "audio": "Soft paper settling."
+        }
+      ],
+      "reducedMotionAlternative": "Display faint static constellations above each confirmed winner portrait with all results visible.",
+      "motif": "stars",
+      "source": "response-original"
+    },
+    {
+      "id": "bookmark",
+      "family": "round_win",
+      "name": "The Little Bookmark",
+      "durationMs": 2000,
+      "postAnimationHoldMs": 7000,
+      "beats": [
+        {
+          "timestampMs": 0,
+          "visual": "Verified round results occupy a warm-paper folio on ink-blue felt, surrounded by existing animal portrait frames.",
+          "audio": "Gentle page settling."
+        },
+        {
+          "timestampMs": 450,
+          "visual": "A fibrous coral bookmark with a triangular notch slides beside the result heading.",
+          "audio": "Soft ribbon-paper friction."
+        },
+        {
+          "timestampMs": 1050,
+          "visual": "A tiny hand-inked animal paw print decorates the bookmark; it belongs to no player.",
+          "audio": "Light rubber-stamp tap."
+        },
+        {
+          "timestampMs": 1550,
+          "visual": "The bookmark rests on the page. Verified winners, ties and scores stay clear; cards and chips never move.",
+          "audio": "Quiet wooden closing tick."
+        }
+      ],
+      "reducedMotionAlternative": "Show the complete result folio with the coral bookmark and paw-print ornament already in place.",
+      "motif": "bookmark",
+      "source": "response-original"
+    }
+  ]
+}

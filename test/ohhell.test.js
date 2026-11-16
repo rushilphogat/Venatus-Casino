@@ -20,6 +20,7 @@ test('40 complete Oh Hell matches score exact bids, conserve cards and protect h
   while(g.phase!=='finished'&&moves++<600){
    const v=view(g,g.turn);assert.equal('hands' in v,false);
    const cards=[...g.stock,g.trumpCard,...g.taken,...g.trick.map(p=>p.card),...Object.values(g.hands).flat()];assert.equal(new Set(cards.map(c=>c.id)).size,52);
+   if(g.phase==='round-end'||g.phase==='trick-end'){now=g.presentation?.maximumUntil||g.deadline;g=tick(g,now++);continue;}
    const a=g.phase==='round-end'?{type:'next-round'}:g.phase==='bid'?{type:'bid',amount:v.legalBids[Math.floor(Math.random()*v.legalBids.length)]}:{type:'play',cards:[v.legalCardIds[Math.floor(Math.random()*v.legalCardIds.length)]]};
    g=act(g,g.turn,a,now++);
   }
@@ -28,5 +29,5 @@ test('40 complete Oh Hell matches score exact bids, conserve cards and protect h
  }
 });
 test('Oh Hell timeout chooses a legal bid and card',()=>{
- let g=create(players,0);for(let i=0;i<10;i++)g=tick(g,g.deadline);assert.ok(g.round>=2);
+ let g=create(players,0);for(let i=0;i<12;i++)g=tick(g,g.deadline);assert.ok(g.round>=2);
 });

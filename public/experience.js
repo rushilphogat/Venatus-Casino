@@ -1,13 +1,17 @@
 // Hand order is presentation only: all moves still use server-issued card IDs.
 let handLayout = { room: null, ids: [] };
 let arranging=false, marked=new Set(), groups=[];
+let layoutKey='';
+function saveLayout(){try{sessionStorage.setItem(layoutKey,JSON.stringify({ids:handLayout.ids,groups}));}catch{}}
 const rankValue = c => ({A:1,J:11,Q:12,K:13}[c.rank] || Number(c.rank) || 99);
 export function orderedHand(room, hand = room.state.hand) {
-  if (handLayout.room !== room.id) {handLayout = {room:room.id, ids:[]};arranging=false;marked=new Set();groups=[];}
+  const key=`venatus-hand:${room.viewerId||'self'}:${room.id}:${room.started||0}:${room.state.round||room.state.handNumber||0}`;
+  if (layoutKey!==key) {layoutKey=key;handLayout = {room:room.id, ids:[]};arranging=false;marked=new Set();groups=[];try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved&&Array.isArray(saved.ids)&&Array.isArray(saved.groups)){handLayout.ids=saved.ids;groups=saved.groups.filter(Array.isArray);}}catch{}}
   const byId = new Map(hand.map(c => [c.id,c]));
   marked = new Set([...marked].filter(id=>byId.has(id)));
   groups = groups.map(group=>group.filter(id=>byId.has(id))).filter(group=>group.length>1);
   handLayout.ids = [...handLayout.ids.filter(id => byId.has(id)), ...hand.filter(c => !handLayout.ids.includes(c.id)).map(c=>c.id)];
+  saveLayout();
   return handLayout.ids.map(id=>byId.get(id));
 }
 export function handTools(room, selected=new Set()) {
@@ -20,7 +24,9 @@ export function handTools(room, selected=new Set()) {
 export function renderHand(room,card,esc,selectable,disabled=()=>false) {
   const cards=orderedHand(room); let prior=-1;
   return cards.map(c=>{const group=groups.findIndex(ids=>ids.includes(c.id)),start=group>=0&&group!==prior;prior=group;
-    return `<span class="hand-card ${start?'group-start':''} ${marked.has(c.id)&&arranging?'arrange-marked':''}" draggable="true" data-hand-id="${esc(c.id)}" ${arranging?`role="button" tabindex="0" data-action="hand-mark" data-id="${esc(c.id)}" aria-pressed="${marked.has(c.id)}" aria-label="Select ${esc(c.rank+' '+c.suit)} for arrangement"`:''}>${card(c,!arranging&&selectable,disabled(c))}</span>`;
+    const checked=start&&room.state.analysis?.groups?.find(g=>g.cards.length===groups[group].length&&g.cards.every(id=>groups[group].includes(id)));
+    const label=checked?({pure:'Pure sequence',sequence:'Sequence',set:'Set'})[checked.kind]:`Group ${group+1}`;
+    return `<span class="hand-card ${start?'group-start':''} ${marked.has(c.id)&&arranging?'arrange-marked':''} ${c.id===room.state.drawnCardId?'just-drawn':''}" draggable="true" data-hand-id="${esc(c.id)}" ${arranging?`role="button" tabindex="0" data-action="hand-mark" data-id="${esc(c.id)}" aria-pressed="${marked.has(c.id)}" aria-label="Select ${esc(c.rank+' '+c.suit)} for arrangement"`:''}>${start?`<small class="group-caption ${checked?'checked':''}">${esc(label)}</small>`:''}${card(c,!arranging&&selectable,disabled(c))}</span>`;
   }).join('');
 }
 export function handleExperienceAction(button, room, selected, render) {
@@ -43,7 +49,7 @@ export function handleExperienceAction(button, room, selected, render) {
     const id=[...(arranging?marked:selected)][0], from=handLayout.ids.indexOf(id), to=from+Number(button.dataset.direction);
     if(from>=0&&to>=0&&to<cards.length) [handLayout.ids[from],handLayout.ids[to]]=[handLayout.ids[to],handLayout.ids[from]];
   }
-  render(); return true;
+  saveLayout();render(); return true;
 }
 export function installHandDrag(getRoom, render) {
   let dragged=null;
@@ -58,7 +64,7 @@ export function installHandDrag(getRoom, render) {
     if(!dragged||!target||!room)return;
     event.preventDefault(); orderedHand(room);
     const from=handLayout.ids.indexOf(dragged), to=handLayout.ids.indexOf(target.dataset.handId);
-    if(from>=0&&to>=0) {handLayout.ids.splice(from,1);handLayout.ids.splice(to,0,dragged);render();}
+    if(from>=0&&to>=0) {handLayout.ids.splice(from,1);handLayout.ids.splice(to,0,dragged);saveLayout();render();}
     dragged=null;
   });
   document.addEventListener('dragend',()=>{dragged=null;});

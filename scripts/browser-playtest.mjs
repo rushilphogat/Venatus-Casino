@@ -71,12 +71,14 @@ async function measure(player, game, display) {
     table:!!document.querySelector('.felt,.social-mat'), controls:!!document.querySelector('.game-actions'),
     handBottom:document.querySelector('.hand').getBoundingClientRect().bottom,
     actionTop:document.querySelector('.game-actions').getBoundingClientRect().top,
+    handRight:document.querySelector('.hand').getBoundingClientRect().right,
+    actionLeft:document.querySelector('.game-actions').getBoundingClientRect().left,
     actionHeight:document.querySelector('.game-actions').getBoundingClientRect().height
   }));
   assert.equal(metrics.width,page.viewportSize().width,game+' '+display+' viewport expanded');
   assert.ok(metrics.pageWidth<=metrics.width+1,game+' '+display+' page overflow '+JSON.stringify(metrics));
   assert.ok(metrics.table&&metrics.controls,game+' missing table or controls');
-  if(metrics.actionHeight>0)assert.ok(metrics.actionTop>=metrics.handBottom-1,game+' '+display+' actions overlap the hand '+JSON.stringify(metrics));
+  if(metrics.actionHeight>0)assert.ok(metrics.actionTop>=metrics.handBottom-1||metrics.actionLeft>=metrics.handRight-1,game+' '+display+' actions overlap the hand '+JSON.stringify(metrics));
   if(captures)await page.screenshot({path:join(captures,game+'-'+display+'.png'),fullPage:true,animations:'disabled'});
 }
 async function scenario(game) {
@@ -135,7 +137,7 @@ async function scenario(game) {
       }
       assert.equal(final?.board.length,5,'missing river');
       assert.ok(Object.keys(final.showdown).length>=2,'missing showdown');
-      await host.page.getByRole('heading',{name:'Showdown',exact:true}).waitFor();
+      await host.page.locator('.poker-showdown').waitFor();
     } else if(game==='rummy'){
       await clickMove(actor,r,actor.page.locator('[data-move=draw][data-source=stock]:enabled').first());
       let s=(await read(actor,r)).state;assert.equal(s.hand.length,14);
@@ -153,13 +155,16 @@ async function scenario(game) {
         actor=await getActor();const s=(await read(actor,r)).state;await select(actor,s.legalCardIds[0]);
         await clickMove(actor,r,move(actor.page,'play'));
       }
-      const s=(await read(host,r)).state;assert.equal(s.phase,'round-end');assert.ok(s.lastTrickWinner);
+      let s=(await read(host,r)).state;assert.ok(['trick-end','round-end'].includes(s.phase));assert.ok(s.lastTrickWinner);
+      await page.waitForFunction(()=>document.querySelector('[data-lounge=ready]'));
     } else if(game==='bluff'){
       const s=(await read(actor,r)).state;
       await select(actor,s.hand[0].id);await select(actor,s.hand[1].id);
       const challenge=await clickMove(actor,r,action(actor.page,'play-cards'));assert.equal(challenge.state.phase,'challenge');
       const other=players.find(p=>p.id!==actor.id);
       const called=await clickMove(other,r,action(other.page,'challenge'));assert.equal(called.state.reveal.cards.length,2);
+      for(const p of players)await clickMove(p,r,p.page.locator('[data-lounge=ready]'));
+      await page.waitForFunction(()=>!document.querySelector('[data-lounge=ready]'),null,{timeout:15000});
       actor=await getActor();await clickMove(actor,r,action(actor.page,'bluff-skip'));
     } else if(game==='chromatic'){
       let plays=0;

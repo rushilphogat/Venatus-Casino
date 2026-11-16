@@ -34,12 +34,14 @@ test('Holdem short all-in does not reopen prior callers and illegal minimum rais
 test('Holdem fold payout, repeated deals and safe cashout preserve exact stacks',()=>{
  let g=create(['a','b','c'],0);g=act(g,g.turn,{type:'fold'},1);g=act(g,g.turn,{type:'fold'},2);assert.equal(g.phase,'between-hands');
  assert.equal(Object.values(g.stacks).reduce((a,b)=>a+b),750);const dealer=g.dealer;
- g=act(g,'a',{type:'next-hand'},3);assert.notEqual(g.dealer,dealer);
- g=act(g,'b',{type:'request-cashout'},4);while(g.phase==='play')g=act(g,g.turn,{type:'fold'},5);
+ g=act(g,'a',{type:'next-hand'},3);assert.equal(g.dealer,dealer,'a single player cannot rush the result');
+ g=tick(g,g.presentation.maximumUntil);assert.notEqual(g.dealer,dealer);
+ g=act(g,'b',{type:'request-cashout'},g.deadline-100);while(g.phase==='play')g=act(g,g.turn,{type:'fold'},g.deadline-1);
  assert.equal(g.phase,'finished');assert.equal(Object.values(g.payouts).reduce((a,b)=>a+b),750);
 });
 test('Holdem equal all-ins run board automatically; timeout uses legal check/fold',()=>{
  let g=create(['a','b'],0);g=act(g,'a',{type:'allin'},1);g=act(g,'b',{type:'call'},2);
+ assert.equal(g.phase,'runout');assert.equal(g.board.length,0);while(g.phase==='runout')g=tick(g,g.deadline);
  assert.equal(g.board.length,5);assert.ok(['finished','between-hands'].includes(g.phase));assert.equal(Object.values(g.stacks).reduce((a,b)=>a+b),500);
  const fresh=create(['a','b'],0);assert.ok(['between-hands','finished'].includes(tick(fresh,fresh.deadline).phase));
 });
@@ -47,9 +49,9 @@ test('80 simulated Holdem sessions exercise legal raises, all-ins, multiple stre
  for(let n=0;n<80;n++){
   const players=['a','b','c','d'];let g=create(players,0),time=1,moves=0;
   while(g.phase!=='finished'&&moves++<1500){
+   if(g.phase==='between-hands'||g.phase==='runout'){time=g.presentation?.maximumUntil||g.deadline;g=tick(g,time++);continue;}
    const v=view(g,g.turn);let a;
-   if(g.phase==='between-hands')a={type:'next-hand'};
-   else if(v.legalActions.includes('allin')&&Math.random()<.12)a={type:'allin'};
+   if(v.legalActions.includes('allin')&&Math.random()<.12)a={type:'allin'};
    else if(v.legalActions.includes('raise')&&v.minRaise<=v.maxRaise&&Math.random()<.25)a={type:'raise',amount:v.minRaise};
    else a={type:Math.random()<.12?'fold':v.legalActions.includes('check')?'check':'call'};
    g=act(g,g.turn,a,time++);

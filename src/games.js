@@ -3,11 +3,12 @@ import { createChromatic, actChromatic, tickChromatic, viewChromatic } from './c
 import { createOhHell, actOhHell, tickOhHell, viewOhHell } from './ohhell.js';
 import { createRummy, actRummy, tickRummy, viewRummy } from './rummy.js';
 import { createPoker, actPoker, tickPoker, viewPoker } from './poker.js';
+import { configurePresentation, paced, beginPresentation, readyPresentation, presentationComplete, presentationView } from './presentation.js';
 
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const COLORS = ['emerald', 'ruby', 'gold', 'sapphire'];
 const TURN_MS = 30000;
-const CHALLENGE_MS = 8000;
+const CHALLENGE_MS = 10000;
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -40,7 +41,7 @@ function finish(game, winner) {
 }
 
 export function createGame(type, playerIds, now = Date.now(), options = {}) {
-  if (type === 'ohhell') return createOhHell(playerIds, now);
+  if (type === 'ohhell') return createOhHell(playerIds, now, options);
   if (type === 'rummy') return createRummy(playerIds, now);
   if (type === 'poker') return createPoker(playerIds, now, options);
   if (type === 'chromatic') return createChromatic(playerIds, now, options);
@@ -50,6 +51,7 @@ export function createGame(type, playerIds, now = Date.now(), options = {}) {
   requireCondition(playerIds.length >= (type === 'bluff' ? 3 : 2) && playerIds.length <= 6, 'Incorrect player count');
   const game = { type, players: [...playerIds], turn: playerIds[0], phase: 'play', winner: null,
     deadline: now + TURN_MS, hands: Object.fromEntries(playerIds.map(id => [id, []])), message: 'The cards are dealt. Your table is ready.', moves: 0 };
+  configurePresentation(game,options);
   if (type === 'bluff') {
     const deck = shuffle(['clubs', 'diamonds', 'hearts', 'spades'].flatMap(suit => RANKS.map(rank => ({ id: `${suit}-${rank}`, rank, suit }))));
     deck.forEach((card, i) => game.hands[playerIds[i % playerIds.length]].push(card));
@@ -94,6 +96,11 @@ function advanceBluff(game, now) {
 }
 
 function bluffAction(game, userId, action, now) {
+  if(game.phase==='reveal'){
+    requireCondition(['ready','continue'].includes(action.type),'Review the revealed cards before the next turn');
+    if(readyPresentation(game,userId,now)){game.presentation=null;startTurn(game,game.turn,now);}
+    return;
+  }
   if (action.type === 'skip' && game.houseRules === 'street') {
     requireCondition(game.phase === 'play' && game.turn === userId, 'It is not your turn');
     game.skips++;
@@ -109,13 +116,16 @@ function bluffAction(game, userId, action, now) {
     requireCondition(userId !== play.player, 'You cannot challenge yourself');
     const lied = play.cards.some(card => card.rank !== play.rank);
     const collector = lied ? play.player : userId;
-    game.reveal = { cards: play.cards, player: play.player, challenger: userId, lied, collector };
+    game.reveal = { cards: play.cards, player: play.player, challenger: userId, lied, collector, rank:play.rank, count:play.cards.length, collectedCount:game.pile.length };
     game.hands[collector].push(...game.pile);
     game.pile = [];
     if (game.houseRules === 'street') { game.declaredRank=null; game.skips=0; }
     game.message = lied ? 'Bluff exposed. The player takes the pile.' : 'An honest declaration. The challenger takes the pile.';
+    beginPresentation(game,'bluff-verdict',now,8000,20000);
+    game.reveal.id=game.presentation.id;game.lastReveal=structuredClone(game.reveal);
+    game.recentReveals||=[];game.recentReveals.push(structuredClone(game.reveal));game.recentReveals=game.recentReveals.slice(-10);
     if (!game.hands[play.player].length) finish(game, play.player);
-    else advanceBluff(game, now);
+    else{advanceBluff(game, now);game.phase='reveal';game.deadline=game.presentation.minimumUntil;}
     return;
   }
   requireCondition(action.type === 'play', 'Unknown action');
@@ -130,7 +140,7 @@ function bluffAction(game, userId, action, now) {
   game.lastPlay = { player: userId, cards, rank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex] };
   game.reveal = null;
   game.phase = 'challenge';
-  game.deadline = now + CHALLENGE_MS;
+  game.deadline = now + paced(game,CHALLENGE_MS);
   game.message = `${cards.length} card${cards.length === 1 ? '' : 's'} declared as ${game.lastPlay.rank}. Challenge now or let the declaration stand.`;
 }
 
@@ -184,7 +194,7 @@ export function actGame(original, userId, action, now = Date.now()) {
   if (original.type === 'chromatic' && original.rulesVersion === 2) return actChromatic(original, userId, action, now);
   requireCondition(original.players.includes(userId), 'You are not seated at this table');
   requireCondition(original.phase !== 'finished', 'The hand is finished');
-  requireCondition(now < original.deadline, 'The action window has expired');
+  requireCondition(now < original.deadline || original.phase==='reveal', 'The action window has expired');
   requireCondition(action && typeof action === 'object', 'Invalid action');
   const game = structuredClone(original);
   if (game.type === 'bluff') bluffAction(game, userId, action, now);
@@ -200,7 +210,10 @@ export function tickGame(original, now = Date.now()) {
   if (original.type === 'chromatic' && original.rulesVersion === 2) return tickChromatic(original, now);
   if (original.phase === 'finished' || now < original.deadline) return original;
   const game = structuredClone(original);
-  if (game.type === 'bluff' && game.phase === 'challenge') {
+  if (game.type === 'bluff' && game.phase === 'reveal') {
+    if(presentationComplete(game,now)){game.presentation=null;startTurn(game,game.turn,now);}
+    return game;
+  } else if (game.type === 'bluff' && game.phase === 'challenge') {
     const player = game.lastPlay.player;
     game.message = game.houseRules === 'street' ? `The declaration stands. ${game.declaredRank} stays in play.` : 'The declaration stands. The next rank is in play.';
     if (!game.hands[player].length) finish(game, player);
@@ -227,7 +240,7 @@ export function viewGame(game, userId) {
     hand: structuredClone(game.hands[userId] ?? []), counts: Object.fromEntries(game.players.map(id => [id, game.hands[id].length])) };
   if (game.type === 'bluff') Object.assign(view, { houseRules:game.houseRules, ranks:[...RANKS], skips:game.skips, requiredRank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex], pileCount: game.pile.length,
     lastPlay: game.lastPlay ? { player: game.lastPlay.player, rank: game.lastPlay.rank, count: game.lastPlay.cards.length } : null,
-    reveal: structuredClone(game.reveal) });
+    reveal: structuredClone(game.reveal),lastReveal:structuredClone(game.lastReveal),recentReveals:structuredClone(game.recentReveals||[]),presentation:presentationView(game),pace:game.pace });
   else Object.assign(view, { topCard: structuredClone(game.discard.at(-1)), activeColor: game.activeColor, direction: game.direction,
     drawCount: game.drawPile.length, discardCount: game.discard.length, colors: [...COLORS] });
   return view;

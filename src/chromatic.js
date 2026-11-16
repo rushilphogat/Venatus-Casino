@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import {configurePresentation,beginPresentation,readyPresentation,presentationComplete,presentationView} from './presentation.js';
 
 export const COLORS = ['ruby', 'emerald', 'sapphire', 'gold'];
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
@@ -32,9 +33,10 @@ function endRound(g, id, now) {
   g.roundPoints = g.players.filter(p => p !== id).reduce((sum, p) => sum + g.hands[p].reduce((s,c) => s + value(c), 0), 0);
   g.scores[id] += g.roundPoints; g.catchablePlayer = null; g.pendingDraw4 = null;
   if (g.scores[id] >= g.targetScore) { g.phase = 'finished'; g.winner = id; g.deadline = null; g.message = '500 points reached. The match winner receives the pot.'; }
-  else { start(g, id, now, 'round-end', 15000); g.message = `Round complete: ${g.roundPoints} points awarded. Next round in 15 seconds.`; }
+  else { start(g, id, now, 'round-end', 15000);beginPresentation(g,'chromatic-round',now,8000,20000);g.message = `Round complete: ${g.roundPoints} points awarded.`; }
 }
 function deal(g, now) {
+  g.presentation=null;
   g.round++; g.direction = 1; g.catchablePlayer = null; g.pendingDraw4 = null; g.evidence = null; g.announced = null; g.pendingPenalty = 0; g.penaltyKind = null;
   g.drawPile = shuffle(chromaticDeck()); g.discard = []; g.hands = Object.fromEntries(g.players.map(p => [p, []]));
   for (let n=0;n<7;n++) for (const p of g.players) draw(g,p,1);
@@ -51,7 +53,7 @@ export function createChromatic(players, now = Date.now(), options = {}) {
   assert(Array.isArray(players) && players.length >= 2 && players.length <= 6 && new Set(players).size === players.length && players.every(p => typeof p === 'string' && p && !['__proto__','constructor','prototype'].includes(p)), 'Chromatic needs 2–6 distinct players');
   const g = { type: 'chromatic', rulesVersion: 2, players: [...players], dealer: players[randomInt(players.length)], round: 0,
     scores: Object.fromEntries(players.map(p => [p,0])), targetScore: 500, winner: null, moves: 0, houseRules: options.houseRules === 'street' ? 'street' : 'classic' };
-  deal(g,now); return g;
+  configurePresentation(g,options);deal(g,now); return g;
 }
 function resolveDraw4(g, challenged, now) {
   const pending = g.pendingDraw4;
@@ -75,7 +77,7 @@ function action(g,id,a,now) {
     g.announced = id; g.message = 'One card declared!'; return;
   }
   if (g.phase === 'round-end') {
-    assert(a.type === 'next-round', 'Start the next round'); g.dealer = g.players[(g.players.indexOf(g.dealer)+1)%g.players.length]; deal(g,now); return;
+    assert(['next-round','ready','continue'].includes(a.type), 'Ready up for the next round');if(!g.presentation||readyPresentation(g,id,now)){g.dealer = g.players[(g.players.indexOf(g.dealer)+1)%g.players.length]; deal(g,now);} return;
   }
   assert(id === g.turn, 'It is not your turn');
   if (g.phase === 'challenge') {
@@ -130,14 +132,14 @@ function action(g,id,a,now) {
   if (!g.hands[id].length) endRound(g,id,now); else start(g,next(g,id,distance),now);
 }
 export function actChromatic(original,id,a,now=Date.now()) {
-  assert(original.players.includes(id), 'You are not seated'); assert(original.phase !== 'finished' && now < original.deadline, 'The action window has ended');
+  assert(original.players.includes(id), 'You are not seated'); assert(original.phase !== 'finished' && (now < original.deadline||original.phase==='round-end'), 'The action window has ended');
   assert(a && typeof a === 'object', 'Invalid action'); const g = structuredClone(original); action(g,id,a,now); g.moves++; return g;
 }
 export function tickChromatic(original,now=Date.now()) {
   if (original.phase === 'finished' || now < original.deadline) return original;
   const g = structuredClone(original);
   if(g.phase === 'challenge') resolveDraw4(g,false,now);
-  else if(g.phase === 'round-end') { g.dealer=next(g,g.dealer); deal(g,now); }
+  else if(g.phase === 'round-end') { if(presentationComplete(g,now)){g.dealer=next(g,g.dealer); deal(g,now);} }
   else if(g.phase === 'choose-color') { g.activeColor = COLORS[0]; start(g,g.turn,now); }
   else if(g.phase === 'drawn') action(g,g.turn,{type:'pass'},now);
   else { action(g,g.turn,{type:'draw'},now); if(g.phase === 'drawn') action(g,g.turn,{type:'pass'},now); }
@@ -146,7 +148,7 @@ export function tickChromatic(original,now=Date.now()) {
 export function viewChromatic(g,id) {
   const hand = structuredClone(g.hands[id] || []);
   return { type:g.type,rulesVersion:2,players:[...g.players],turn:g.turn,phase:g.phase,winner:g.winner,deadline:g.deadline,message:g.message,moves:g.moves,
-    houseRules:g.houseRules||'classic',pendingPenalty:g.pendingPenalty||0,penaltyKind:g.penaltyKind,
+    houseRules:g.houseRules||'classic',pendingPenalty:g.pendingPenalty||0,penaltyKind:g.penaltyKind,presentation:presentationView(g),
     hand,counts:Object.fromEntries(g.players.map(p=>[p,g.hands[p].length])),topCard:structuredClone(g.discard.at(-1)),activeColor:g.activeColor,direction:g.direction,
     colors:[...COLORS],drawCount:g.drawPile.length,discardCount:g.discard.length,scores:{...g.scores},targetScore:g.targetScore,round:g.round,roundWinner:g.roundWinner,roundPoints:g.roundPoints,
     legalCardIds:g.turn===id && ['play','drawn'].includes(g.phase) ? hand.filter(c=>matches(g,c) && (g.phase!=='drawn' || c.id===g.drawnCardId)).map(c=>c.id) : [],

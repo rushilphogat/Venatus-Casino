@@ -209,6 +209,7 @@ function rummyDiscard(v, level) {
 }
 
 export function botAction(view, random = Math.random, difficulty = 'medium') {
+  if (view.presentation || ['runout','reveal','trick-end','finished'].includes(view.phase)) return null;
   const level = LEVEL[difficulty] ?? LEVEL.medium;
   if (view.type === 'poker') return pokerAction(view, random, level);
   if (view.type === 'ohhell') {

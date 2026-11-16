@@ -19,3 +19,6 @@ PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS event_metadata(event_id TEXT PRIMARY KEY REFERENCES events(id),data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS event_results(event_id TEXT PRIMARY KEY REFERENCES events(id),data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS user_profiles(user_id TEXT PRIMARY KEY REFERENCES users(id),display_name TEXT NOT NULL DEFAULT '',preset INTEGER NOT NULL CHECK(preset>=0 AND preset<24),image_base64 TEXT,version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS chat_channels(room_id TEXT PRIMARY KEY REFERENCES rooms(id),seq INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS chat_messages(room_id TEXT NOT NULL REFERENCES rooms(id),seq INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(room_id,seq));

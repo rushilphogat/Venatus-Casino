@@ -79,8 +79,8 @@ test('unchallenged final card waits exactly until deadline and then wins', () =>
   const game = createGame('bluff', players, 0);
   game.hands.alice = [card('last', 'Q')];
   const next = actGame(game, 'alice', { type: 'play', cards: ['last'] }, 1);
-  assert.equal(tickGame(next, 8000), next);
-  assert.equal(tickGame(next, 8001).winner, 'alice');
+  assert.equal(tickGame(next, next.deadline-1), next);
+  assert.equal(tickGame(next, next.deadline).winner, 'alice');
   assert.equal(next.winner, null);
 });
 
@@ -89,7 +89,7 @@ test('Bluff timeout creates a challenge window, then advances turn and rank', ()
   const next = tickGame(game, 30000);
   assert.equal(next.phase, 'challenge');
   assert.equal(next.hands.alice.length, game.hands.alice.length - 1);
-  const advanced = tickGame(next, 38000);
+  const advanced = tickGame(next, next.deadline);
   assert.equal(advanced.turn, 'bob');
   assert.equal(viewGame(advanced, 'bob').requiredRank, '2');
   assert.deepEqual(inventory(advanced), inventory(game));
@@ -101,7 +101,9 @@ test('50 randomized Bluff matches with challenges finish and conserve every card
     let game = createGame('bluff', players, now);
     const original = inventory(game);
     for (let move = 0; move < 4000 && game.phase !== 'finished'; move++) {
-      if (game.phase === 'challenge') {
+      if(game.phase==='reveal'){
+        now=game.presentation.maximumUntil;game=tickGame(game,now);
+      } else if (game.phase === 'challenge') {
         if (Math.random() < 0.08) {
           const challenger = game.players.find(p => p !== game.lastPlay.player);
           game = actGame(game, challenger, { type: 'challenge' }, ++now);

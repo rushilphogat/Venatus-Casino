@@ -1,4 +1,6 @@
 import {handTools,renderHand} from './experience.js';
+import {portrait} from './profiles.js';
+import {toolbar,presentationControls} from './lounge.js';
 function seatMarkup(room, ui) {
   const {state,esc,fmt}=ui, g=room.state, poker=room.game==='poker';
   const own=Math.max(0,room.players.findIndex(p=>p.id===state.user.id));
@@ -11,7 +13,7 @@ function seatMarkup(room, ui) {
     const label=p.left?'Autoplay':p.bot?'Bot':p.id===state.user.id?'You':p.online===false?'Offline':'';
     const count=poker?`${fmt(g.stacks[p.id])} chips`:g.dropped?.[p.id]?'Dropped':`${g.counts[p.id]} cards`;
     const bet=poker&&g.bets?.[p.id]>0?`<span class="seat-wager"><i></i>${fmt(g.bets[p.id])}</span>`:'';
-    return `<div class="seat ${active?'active':''} ${poker&&g.folded[p.id]?'seat-folded':''}" data-seat-id="${esc(p.id)}" style="${style}"><div class="seat-name" title="${esc(p.name)}">${esc(p.name)}</div><div class="seat-count">${count}${label?' · '+label:''}</div><div class="seat-marks">${tags.map(([,tag,title])=>`<span class="dealer-mark" title="${title}" aria-label="${title}">${tag}</span>`).join('')}${bet}${poker&&g.folded[p.id]?'<small>Folded</small>':''}</div></div>`;
+    return `<div class="seat ${i===0||i*2===seats.length?'seat-axis':''} ${active?'active':''} ${poker&&g.folded[p.id]?'seat-folded':''}" data-seat-id="${esc(p.id)}" style="${style}">${portrait(p)}<div class="seat-name" title="${esc(p.name)}">${esc(p.name)}</div><div class="seat-count">${count}${label?' · '+label:''}</div><div class="seat-marks">${tags.map(([,tag,title])=>`<span class="dealer-mark" title="${title}" aria-label="${title}">${tag}</span>`).join('')}${bet}${poker&&g.folded[p.id]?'<small>Folded</small>':''}</div></div>`;
   }).join('');
 }
 function roundLedger(g, name, esc) {
@@ -38,7 +40,7 @@ export function specialRoom(room, ui) {
     if(shown.length)status+=`<section class="poker-showdown" aria-label="Showdown results"><div class="poker-showdown-heading"><h2>Showdown</h2></div><div class="poker-showdown-grid">${shown.map(([id,s],index)=>`<article class="poker-result ${winners.has(id)?'is-winner':''}"><div class="poker-result-label">${winners.has(id)?'POT WINNER':'HAND REVEALED'}</div><h3>${esc(name(id))}${id===state.user.id?' · You':''}</h3><div class="poker-hole-cards">${s.hand.map((c,i)=>flip(c,index*2+i,!previous.showdown)).join('')}</div><strong class="poker-hand-name">${esc(s.name)}</strong>${winners.has(id)?`<span class="poker-winner-mark">Awarded ${fmt(wonBy(id))} chips</span>`:''}</article>`).join('')}</div></section>`;
     else if(settled)status+='<div class="poker-uncontested">The winning hand stays private.</div>';
     pokerReveal={key,board:g.board.length,showdown:shown.length>0};
-    if(g.phase==='between-hands')controls=button('next-hand','Deal next hand')+button('cashout','End session');
+    if(g.phase==='between-hands')controls=(g.presentation?presentationControls(room,state.user.id):button('next-hand','Deal next hand'))+button('cashout','End session');
     else {
       controls=g.legalActions.filter(a=>a!=='raise').map(a=>button(a,a==='allin'?'All in':a==='call'?`Call ${g.toCall}`:a[0].toUpperCase()+a.slice(1),own)).join('');
       if(g.legalActions.includes('raise')&&g.minRaise<=g.maxRaise)controls+=`<div class="bet-sizing"><div class="bet-presets">${[["Min",g.minRaise],["½ pot",(g.bets[state.user.id]||0)+g.toCall+Math.round((g.pot+g.toCall)/2)],["Pot",(g.bets[state.user.id]||0)+g.toCall+g.pot+g.toCall],["Max",g.maxRaise]].map(([label,n])=>`<button data-action="bet-preset" data-amount="${Math.max(g.minRaise,Math.min(n,g.maxRaise))}">${label}</button>`).join('')}</div><label class="bet-slide"><span class="hidden">Raise size</span><input id="bet-slider" type="range" min="${g.minRaise}" max="${g.maxRaise}" value="${g.minRaise}" step="1"></label><label>Raise to<input id="bet-amount" type="number" min="${g.minRaise}" max="${g.maxRaise}" value="${g.minRaise}" step="1"></label>${button('raise','Raise',own)}</div>`;
@@ -47,11 +49,12 @@ export function specialRoom(room, ui) {
     }
   }else if(room.game==='ohhell'){
     const trick=g.trick.length?g.trick:g.lastTrick;
-    center=`<div class="trick-stage"><div class="trump-tile"><span class="eyebrow">Trump · ${esc(g.trumpCard.suit)}</span>${card(g.trumpCard)}<span>Round ${g.round} / ${g.rounds}</span></div><div class="trick-cards"><p class="trick-title">${g.trick.length?`Follow ${esc(g.trick[0].card.suit)} · trick ${Object.values(g.tricks).reduce((a,b)=>a+b,0)+1}/${g.handSize}`:g.lastTrick.length?`Last trick · ${esc(name(g.lastTrickWinner))} took it`:'Make your bid'}</p><div class="row wrap">${trick.map(t=>`<div data-trick-card="${esc(t.card.id)}" class="trick-play ${!g.trick.length&&t.player===g.lastTrickWinner?'trick-winner':''}"><span>${esc(name(t.player))}</span>${card(t.card)}</div>`).join('')||`<div class="trick-empty">${g.handSize} tricks available<br><small>Predict how many you will take</small></div>`}</div></div></div>`;
+    center=`<div class="trick-stage"><div class="trump-tile"><span class="eyebrow">Trump · ${esc(g.trumpCard.suit)}</span>${card(g.trumpCard)}<span>Round ${g.round} / ${g.rounds}</span></div><div class="trick-cards"><p class="trick-title">${g.phase==='trick-end'?`Last trick · ${esc(name(g.lastTrickWinner))} took it`:g.trick.length?`Follow ${esc(g.trick[0].card.suit)} · trick ${Object.values(g.tricks).reduce((a,b)=>a+b,0)+1}/${g.handSize}`:g.lastTrick.length?`Last trick · ${esc(name(g.lastTrickWinner))} took it`:'Make your bid'}</p><div class="row wrap">${trick.map(t=>`<div data-trick-card="${esc(t.card.id)}" class="trick-play ${(!g.trick.length||g.phase==='trick-end')&&t.player===g.lastTrickWinner?'trick-winner':''}"><span>${esc(name(t.player))}</span>${card(t.card)}</div>`).join('')||`<div class="trick-empty">${g.handSize} tricks available<br><small>Predict how many you will take</small></div>`}</div></div></div>`;
     status=`<div class="bid-scoreboard" aria-label="Bids and scores">${g.players.map(id=>`<div class="bid-score ${g.bids[id]!==undefined&&g.tricks[id]===g.bids[id]?'on-target':''}"><strong>${esc(name(id))}</strong><div><b>${g.tricks[id]}</b><span> / ${g.bids[id]??'—'} bid</span></div><small>${g.scores[id]} points${g.bids[id]!==undefined&&g.tricks[id]>g.bids[id]?' · Over bid':''}</small></div>`).join('')}</div>`;
     status+=roundLedger(g,name,esc);
     if(g.phase==='bid')controls=own?`<div class="bid-pad" role="group" aria-label="Choose your bid"><strong>Bid tricks</strong>${g.legalBids.map(b=>button('bid',String(b),true,`data-amount="${b}" aria-label="Bid ${b} tricks"`)).join('')}</div>`:`<span class="small muted">Waiting for ${esc(name(g.turn))} to bid</span>`;
-    else if(g.phase==='round-end')controls=button('next-round','Deal next round');
+    else if(g.phase==='round-end')controls=g.presentation?presentationControls(room,state.user.id):button('next-round','Deal next round');
+    else if(g.phase==='trick-end')controls='<span class="trick-verdict">'+esc(name(g.lastTrickWinner))+' takes the trick</span>';
     else controls=button('play','Play selected card',own&&state.selected.size===1);
   }else{
     center=`<div class="rummy-stage"><div class="rummy-deck"><span class="eyebrow">Wild</span>${card(g.indicator)}<small>${esc(g.wildRank)} is wild</small></div><button class="rummy-deck pile-action" data-action="special-action" data-move="draw" data-source="stock" ${own&&g.phase==='draw'?'':'disabled'} aria-label="Draw from closed stock">${card(null)}<strong>Closed deck</strong><small>${g.stockCount} cards</small></button><button class="rummy-deck pile-action" data-action="special-action" data-move="draw" data-source="discard" ${own&&g.phase==='draw'&&g.canTakeDiscard?'':'disabled'} aria-label="Take the open discard">${g.topCard?card(g.topCard):'<span class="discard-space"></span>'}<strong>Open discard</strong><small>${!g.topCard?'Empty':g.canTakeDiscard?'':'Joker · locked'}</small></button></div>`;
@@ -63,13 +66,19 @@ export function specialRoom(room, ui) {
   }
   const selectable=room.game==='ohhell'?own&&g.phase==='play':room.game==='rummy'?own&&g.phase==='discard':false;
   const banner=done?`<div class="win-banner">${room.status==='canceled'?'Table canceled':room.game==='poker'?'Session settled':g.winners?.length>1?'Draw':g.winner?`${esc(name(g.winner))} wins`:'Round complete'}. ${room.practice?'':`Your wallet received ${fmt(room.payout)} chips.`}</div>`:room.status==='paused'?'<div class="win-banner">Play paused by an administrator.</div>':'';
-  return `${header()}<main class="layout game-room game-${room.game}" data-game="${room.game}"><div class="room-top"><div><button data-action="navigate" data-page="lobby" class="subtle">← Tables</button><div class="eyebrow">${gameName(room.game)}</div><h2>${esc(room.name)}</h2></div><div class="room-meta">${room.practice?'':''}<button data-action="leave-table" class="subtle">Leave table</button>${room.practice&&room.game!=='poker'?'':`${room.game==='poker'?room.practice?'Starting stack':'Buy-in':'Ante'} ${fmt(room.stake)}`}<button data-action="rules" data-game="${room.game}">Rules</button></div></div>${banner}${room.practice&&g.phase==='between-hands'?hostControls(room):''}
+  return `${header()}<main class="layout game-room game-${room.game}" data-game="${room.game}"><div class="room-top"><div><button data-action="navigate" data-page="lobby" class="subtle">← Tables</button><div class="eyebrow">${gameName(room.game)}</div><h2>${esc(room.name)}</h2></div><div class="room-meta">${room.practice?'':''}<button data-action="leave-table" class="subtle">Leave table</button>${room.practice&&room.game!=='poker'?'':`${room.game==='poker'?room.practice?'Starting stack':'Buy-in':'Ante'} ${fmt(room.stake)}`}<button data-action="rules" data-game="${room.game}">Rules</button></div></div>${toolbar()}${banner}${room.practice&&g.phase==='between-hands'?hostControls(room):''}
     <section class="felt"><div class="seats">${seatMarkup(room,ui)}</div><div class="table-center">${center}</div></section>
-    <div class="turn-bar"><strong>${room.status==='paused'?'Paused':done?'Complete':g.phase==='between-hands'?'Hand complete':g.phase==='round-end'?'Round complete':own?(room.game==='rummy'?(g.phase==='draw'?'Draw a card':'Discard one card'):g.phase==='bid'?'Choose your bid':'Your turn'):`${esc(name(g.turn))}’s turn`}</strong>${!done?`<span class="timer" data-deadline="${g.deadline}"></span>`:''}</div>${status}<div class="hand-label">Your hand · ${g.hand.length} cards</div>${handTools(room,state.selected)}<div class="hand">${renderHand(room,card,esc,selectable,c=>room.game==='ohhell'&&!g.legalCardIds.includes(c.id))}</div>
-    <div class="game-actions">${done?`${room.practice&&room.host===state.user.id?'<button class="primary" data-action="rematch">Play again</button>':''}<button data-action="leave-table">Leave table</button>`:controls}</div>${connection()}</main>${footer()}`;
+    <div class="turn-bar"><strong>${room.status==='paused'?'Paused':done?'Complete':g.phase==='between-hands'?'Hand complete':g.phase==='round-end'?'Round complete':g.phase==='trick-end'?'Trick complete':g.phase==='runout'?'All in · cards on the table':own?(room.game==='rummy'?(g.phase==='draw'?'Draw a card':'Discard one card'):g.phase==='bid'?'Choose your bid':'Your turn'):`${esc(name(g.turn))}’s turn`}</strong>${!done?`<span class="timer" data-deadline="${g.deadline}"></span>`:''}</div>${status}<div class="player-zone"><section class="player-hand">${g.currentHand?`<button type="button" class="current-hand" data-highlight-hand="${esc(g.currentHand.cardIds.join(','))}" aria-pressed="false"><span>Your hand</span><strong>${esc(g.currentHand.name)}${g.board.length>=3?` · ${esc(g.currentHand.description)}`:''}</strong><small>Highlight cards ↗</small></button>`:''}<div class="hand-label ${room.game==='poker'?'sr-only':''}">Your hand · ${g.hand.length} cards</div>${handTools(room,state.selected)}<div class="hand">${renderHand(room,card,esc,selectable,c=>room.game==='ohhell'&&!g.legalCardIds.includes(c.id))}</div>
+    </section><div class="game-actions">${done?`${room.practice&&room.host===state.user.id?'<button class="primary" data-action="rematch">Play again</button>':''}<button data-action="leave-table">Leave table</button>`:controls}</div></div>${connection()}</main>${footer()}`;
 }
 
 export function installSpecialInput() {
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('[data-highlight-hand]');if(!button)return;
+    const active=button.getAttribute('aria-pressed')!=='true',ids=new Set(button.dataset.highlightHand.split(','));
+    button.setAttribute('aria-pressed',String(active));
+    document.querySelectorAll('[data-card-id]').forEach(el=>el.classList.toggle('hand-highlight',active&&ids.has(el.dataset.cardId)));
+  });
   document.addEventListener('input', event => {
     const input = event.target;
     if (!['bet-slider','bet-amount'].includes(input.id) || !input.validity.valid || !input.value) return;
@@ -98,7 +107,7 @@ function tableMoves(previous, room) {
   }
   if (!before) return [];
   if (room.game==='ohhell' && before.round===after.round) {
-    if (after.lastTrick.length && before.lastTrick[0]?.card.id!==after.lastTrick[0].card.id && !after.trick.length)
+    if (before.phase==='trick-end' && after.phase!=='trick-end' && after.lastTrick.length)
       return after.lastTrick.map(t=>move('trick',`[data-trick-card="${selectorValue(t.card.id)}"]`,seat(after.lastTrickWinner)));
     return after.trick.filter(t=>!before.trick.some(old=>old.card.id===t.card.id)).map(t=>move('play',seat(t.player),`[data-trick-card="${selectorValue(t.card.id)}"]`));
   }
