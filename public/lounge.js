@@ -1,8 +1,9 @@
 import {portrait,emotes} from './profiles.js';
 import {getMix,setMix,updateScore,playSound} from './audio.js';
-import {sceneFor,commentFor} from './personality.js';
+import {commentFor} from './personality.js';
+import {openCinema,syncCinema,cinemaTalk} from './cinema.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let options,drawer,resultPanel,chatRoom=null,chatCursor=0,chatLoading=false,chatOpen=false,messages=[],muted=new Set(),seen=new Set(),recent=new Map(),replayIndex=0,replayStep=0;
+let options,drawer,resultPanel,chatRoom=null,chatCursor=0,chatLoading=false,chatAgain=false,chatOpen=false,messages=[],muted=new Set(),seen=new Set(),recent=new Map(),replayIndex=0,replayStep=0;
 let settings={scale:'auto',effects:'full',shake:false,cards:1};try{settings={...settings,...JSON.parse(localStorage.getItem('venatus-experience')||'{}')};muted=new Set(JSON.parse(localStorage.getItem('venatus-muted-players')||'[]'));}catch{}
 export function toolbar(){return '<div class="experience-toolbar"><button type="button" data-lounge="chat" aria-label="Open table chat">Chat <span class="chat-unread"></span></button><button type="button" data-lounge="emotes" aria-label="Send a reaction">☺ React</button><button type="button" data-lounge="results">Last result</button><button type="button" data-lounge="settings" aria-label="Display and sound settings">⚙</button><button type="button" data-lounge="fullscreen" aria-label="Toggle fullscreen">⛶</button></div>';}
 export function presentationControls(room,viewer){
@@ -18,28 +19,18 @@ function eventFor(room){const g=room?.state;if(!g)return null;const name=id=>roo
   if(g.phase==='finished'||g.phase==='round-end'){const winner=g.roundWinner||g.winner,winners=g.phase==='finished'&&g.winners?.length>1?g.winners:null;return {id:`${room.id}:${room.started||''}:${room.game}:${g.round||g.handNumber||0}:${g.phase}`,family:room.game,title:winners?`${winners.map(name).join(' & ')} tie`:winner?`${name(winner)} wins`:'Round complete',sub:g.round?`Round ${g.round}`:'Well played.',room:structuredClone(room)};}
   return null;
 }
-function cinematic(event){
-  if(settings.effects==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  const concept=sceneFor(event),g=event.room.state,subtle=settings.effects==='subtle'||(event.family==='poker'&&!Object.keys(g.lastResult?.showdown||{}).length);
-  const trigger=event.trigger||({caught:'bluff_caught',honest:'honest_claim',rummy:'valid_declaration'})[event.family]||'public_win';
-  const caption=commentFor(event.room.game,trigger,event.id);
-  const publicCards=event.family==='poker'?(g.lastResult?.board||[]):['caught','honest'].includes(event.family)?(g.reveal?.cards||[]):event.family==='chromatic'&&g.topCard?[g.topCard]:[];
-  const rows=event.family==='poker'?g.lastResult.pots.map((p,i)=>`<div class="scene-pot"><b>${p.uncalled?'Returned':i===0?'Main pot':'Side pot'}</b><span>${esc(p.winners.map(id=>event.room.players.find(p=>p.id===id)?.name||'Player').join(' / '))}</span><strong>${p.amount.toLocaleString()}</strong></div>`).join(''):'';
-  document.querySelectorAll('.scene-overlay,.scene-skip').forEach(el=>el.remove());const scene=document.createElement('section');scene.className=`scene-overlay scene-${event.family} motif-${concept.id} ${subtle?'scene-subtle':''}`;scene.style.setProperty('--scene-duration',`${concept.durationMs}ms`);scene.setAttribute('aria-hidden','true');scene.dataset.scene=concept.id;
-  scene.innerHTML=`<div class="scene-rays"></div><div class="scene-title"><span>${esc(event.sub)}</span><strong>${esc(event.title)}</strong><div class="scene-evidence">${publicCards.map((c,i)=>`<div style="--card-index:${i}">${options.card(c)}</div>`).join('')}</div>${rows?`<div class="scene-ledger">${rows}</div>`:''}<div class="scene-ornament"><i>✦</i><i>✦</i><i>✦</i></div>${caption?`<p class="scene-caption">${esc(caption)}</p>`:''}</div>${Array.from({length:subtle?0:12},(_,i)=>`<i class="scene-particle" style="--i:${i};--angle:${i*137.5}deg;--distance:${28+i%5*5}vmin;--delay:${i%5*.04}s">${['♠','♥','✦','♦'][i%4]}</i>`).join('')}`;
-  const skip=document.createElement('button');skip.className='scene-skip';skip.textContent='Skip animation';skip.addEventListener('click',()=>{scene.remove();skip.remove();});document.body.append(scene,skip);
-  setTimeout(()=>{scene.remove();skip.remove();},subtle?1100:concept.durationMs);
-}
+function cinematic(event){openCinema(event,{settings,card:options.card,ready:presentationId=>options.submitAction({type:'ready',presentationId})});}
 export function syncLounge(previous,room){
+  syncCinema(room);
   // Rebuild results from the authorized server history after reload or reconnect.
   if(room?.state){
     const entries=room.game==='poker'?(room.state.recentResults||[]).map(r=>eventFor({...room,state:{...room.state,handNumber:r.handNumber,lastResult:r,board:r.board,showdown:r.showdown,hand:r.ownHand}})):room.game==='bluff'?(room.state.recentReveals||[]).map(r=>eventFor({...room,state:{...room.state,reveal:r}})):[];
     const list=recent.get(room.id)||[];for(const entry of entries.filter(Boolean))if(!list.some(e=>e.id===entry.id))list.unshift(entry);recent.set(room.id,list.slice(0,20));
   }
   updateScore(room);const event=eventFor(room);
-  if(event&&!seen.has(event.id)){seen.add(event.id);if(seen.size>200)seen.delete(seen.values().next().value);const list=recent.get(room.id)||[];if(!list.some(e=>e.id===event.id))list.unshift(event);recent.set(room.id,list.slice(0,20));if(previous?.id===room.id){cinematic(event);playSound(event.family==='caught'?'exposed':event.family==='honest'?'honest':'win');}}
+  if(event&&!seen.has(event.id)){seen.add(event.id);if(seen.size>200)seen.delete(seen.values().next().value);const list=recent.get(room.id)||[];if(!list.some(e=>e.id===event.id))list.unshift(event);recent.set(room.id,list.slice(0,20));if(previous?.id===room.id){cinematic(event);}}
   if(chatRoom!==room?.id){chatRoom=room?.id||null;chatCursor=0;messages=[];if(drawer)renderMessages();}
-  if(room&&chatOpen)refreshChat();
+  if(room&&(chatOpen||room.botChatSeq!==previous?.botChatSeq))refreshChat();
 }
 function renderMessages(){if(!drawer)return;const list=drawer.querySelector('.chat-messages'),nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<80;
   const state=options.getState(),host=state.room?.host===state.user?.id;
@@ -47,13 +38,16 @@ function renderMessages(){if(!drawer)return;const list=drawer.querySelector('.ch
   if(nearBottom)list.scrollTop=list.scrollHeight;
 }
 export async function refreshChat(){
-  const state=options?.getState();if(!state?.user||state.page!=='room'||!state.roomId||chatLoading)return;
+  const state=options?.getState();if(!state?.user||state.page!=='room'||!state.roomId)return;if(chatLoading){chatAgain=true;return;}
   const room=state.roomId;chatLoading=true;
   try{const data=await options.api(`/api/rooms/${encodeURIComponent(room)}/chat`);if(options.getState().roomId!==room)return;
     const fresh=data.messages.filter(m=>m.id>chatCursor);messages=data.messages;chatCursor=data.cursor||0;renderMessages();
-    for(const message of fresh.slice(-3))if(!muted.has(message.userId)&&message.type==='emote'){const seat=[...document.querySelectorAll('[data-seat],[data-seat-id]')].find(s=>(s.dataset.seat||s.dataset.seatId)===message.userId);if(seat){const bubble=document.createElement('span');bubble.className='seat-emote';bubble.textContent=emotes[message.emote]||'✦';seat.append(bubble);setTimeout(()=>bubble.remove(),3200);}}
+    for(const message of fresh.slice(-3))if(!muted.has(message.userId)&&Date.now()-message.at<10000){
+      if(message.bot&&!cinemaTalk(message)){document.querySelector('.bot-comment-toast')?.remove();const bubble=document.createElement('aside');bubble.className='bot-comment-toast';bubble.setAttribute('role','status');bubble.innerHTML=`${portrait({avatar:message.avatar,name:message.name})}<div><strong>${esc(message.name)} · Bot</strong><p>${esc(message.text)}</p></div><button aria-label="Dismiss comment">×</button>`;bubble.querySelector('button').onclick=()=>bubble.remove();document.body.append(bubble);setTimeout(()=>bubble.remove(),6500);}
+      if(message.type==='emote'){const seat=[...document.querySelectorAll('[data-seat],[data-seat-id]')].find(s=>(s.dataset.seat||s.dataset.seatId)===message.userId);if(seat){const bubble=document.createElement('span');bubble.className='seat-emote';bubble.textContent=emotes[message.emote]||'✦';seat.append(bubble);setTimeout(()=>bubble.remove(),3200);}}
+    }
     if(!chatOpen&&fresh.length&&fresh.some(m=>m.userId!==state.user.id))document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='•');
-  }catch(error){if(chatOpen)drawer.querySelector('.chat-error').textContent=error.message;}finally{chatLoading=false;}
+  }catch(error){if(chatOpen)drawer.querySelector('.chat-error').textContent=error.message;}finally{chatLoading=false;if(chatAgain){chatAgain=false;queueMicrotask(refreshChat);}}
 }
 async function sendMessage(body){const state=options.getState();if(!state.roomId)throw new Error('Join a table to chat.');await options.api(`/api/rooms/${encodeURIComponent(state.roomId)}/chat`,body);await refreshChat();}
 function openChat(){chatOpen=true;drawer.hidden=false;drawer.querySelector('.chat-error').textContent='';document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='');

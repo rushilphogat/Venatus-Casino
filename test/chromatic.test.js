@@ -50,16 +50,14 @@ test('legal Wild +4 failed challenge draws six; acceptance draws four; no stacki
 test('final +4 waits for resolution and counts drawn penalty cards in scoring',()=>{
   const g=fixture(); g.hands.a=[c('wild','wild','wilddraw4')];
   let result=act(g,'a',{type:'play',cards:['wild'],color:'gold'},1); assert.equal(result.winner,null);
-  result=act(result,'b',{type:'accept'},2); assert.equal(result.phase,'round-end'); assert.equal(result.scores.a,14);
+  result=act(result,'b',{type:'accept'},2); assert.equal(result.phase,'finished'); assert.equal(result.scores.a,14);
   assert.equal(result.roundWinner,'a');
 });
-test('scores carry between rounds and match ends at 500',()=>{
-  const g=fixture(); g.hands.a=[c('a')]; g.scores.a=499;
-  const result=act(g,'a',{type:'play',cards:['a']},1); assert.equal(result.phase,'finished'); assert.equal(result.winner,'a');
-  g.scores.a=0; const round=act(g,'a',{type:'play',cards:['a']},1);
-  const ready=act(round,'b',{type:'next-round'},2);assert.equal(ready.round,g.round);
-  const next=tick(ready,ready.presentation.maximumUntil); assert.equal(next.round,g.round+1); assert.equal(next.scores.a,6);
+test('one round completes the match at any score, with no automatic redeal',()=>{
+ const g=fixture();g.hands.a=[c('a')];
+ const result=act(g,'a',{type:'play',cards:['a']},1);assert.equal(result.phase,'finished');assert.equal(result.winner,'a');assert.equal(result.round,1);assert.equal(result.scores.a,6);assert.equal(result.targetScore,null);assert.equal(tick(result,100000),result);assert.throws(()=>act(result,'a',{type:'next-round'},3),/ended/);
 });
+
 test('two-player reverse returns turn and draw-two skips recipient',()=>{
   const g=fixture(); g.players=['a','b']; delete g.hands.c;
   g.hands.a=[c('r','ruby','reverse'),c('other')]; assert.equal(act(g,'a',{type:'play',cards:['r']},1).turn,'a');
@@ -73,7 +71,7 @@ test('opening action cards, deck recycling and personalized views preserve inven
     assert.ok(!('hands' in view(g,'a'))); assert.equal(view(g,'outsider').hand.length,0);
   }
 });
-test('30 full classic matches reach 500 points while conserving every card',()=>{
+test('30 single-round classic matches finish while conserving every card',()=>{
   for(let n=0;n<30;n++) {
     let g=create(players,0),time=1,moves=0;
     while(g.phase!=='finished' && moves++<10000){
@@ -85,6 +83,6 @@ test('30 full classic matches reach 500 points while conserving every card',()=>
       g=act(g,g.turn,a,time++);
       const cards=[...g.drawPile,...g.discard,...Object.values(g.hands).flat()]; assert.equal(cards.length,108); assert.equal(new Set(cards.map(c=>c.id)).size,108);
     }
-    assert.equal(g.phase,'finished'); assert.ok(g.scores[g.winner]>=500);
+    assert.equal(g.phase,'finished'); assert.equal(g.round,1); assert.ok(g.winner);
   }
 });

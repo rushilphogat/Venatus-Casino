@@ -106,7 +106,7 @@ test('Bluff verdict survives bot/human attempts to advance and remains in histor
   g=actGame(g,'a',{type:'play',cards:['Ks'],rank:'A'},1);
   g=actGame(g,'b',{type:'challenge'},2);
   assert.equal(g.phase,'reveal');assert.equal(g.reveal.collectedCount,1);
-  assert.equal(g.presentation.minimumUntil,10502);
+  assert.equal(g.presentation.minimumUntil,16002);
   assert.equal(botAction(viewGame(g,'c')),null);
   assert.throws(()=>actGame(g,'b',{type:'play',cards:['Ah'],rank:'K'},3),/Review/);
   g=actGame(g,'a',{type:'ready'},4);g=actGame(g,'b',{type:'ready'},5);
@@ -114,7 +114,7 @@ test('Bluff verdict survives bot/human attempts to advance and remains in histor
   g=tickGame(g,g.presentation.minimumUntil);
   assert.equal(g.phase,'play');assert.equal(g.turn,'b');assert.equal(g.declaredRank,null);
   const result=structuredClone(g.lastReveal);
-  g=actGame(g,'b',{type:'play',cards:['Ah'],rank:'A'},8003);
+  g=actGame(g,'b',{type:'play',cards:['Ah'],rank:'A'},16003);
   assert.equal(g.reveal,null);assert.deepEqual(viewGame(g,'c').lastReveal,result);
 });
 

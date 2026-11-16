@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { createGame, actGame, tickGame, viewGame } from './games.js';
 import { botAction } from './bots.js';
+import { chooseBotComment } from './table-talk.js';
 import sharp from 'sharp';
 
 const scrypt = promisify(scryptCallback);
@@ -40,7 +41,15 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
   const events = async () => await Promise.all((await all('SELECT id FROM events ORDER BY created DESC')).map(async e => (await event(e.id))));
   const rooms = async (activeOnly = false) => (await all(activeOnly ? "SELECT data FROM rooms WHERE json_extract(data,'$.status') IN ('waiting','playing','paused')" : 'SELECT data FROM rooms')).map(r => JSON.parse(r.data));
   const room = async id => { const r = (await get('SELECT data FROM rooms WHERE id=?', id)); if (!r) fail('Table not found', 404); return JSON.parse(r.data); };
-  const save = async r => { syncPresentationHumans(r);r.version = (r.version || 0) + 1; r.savedAt = Date.now(); (await run('INSERT INTO rooms VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data', r.id, JSON.stringify(r))); return r; };
+  async function appendChat(r,message){
+    await run('INSERT INTO chat_channels VALUES(?,0) ON CONFLICT(room_id) DO NOTHING',r.id);
+    await run('UPDATE chat_channels SET seq=seq+1 WHERE room_id=?',r.id);
+    const seq=(await get('SELECT seq FROM chat_channels WHERE room_id=?',r.id)).seq;
+    await run('INSERT INTO chat_messages VALUES(?,?,?)',r.id,seq,JSON.stringify({...message,id:seq}));
+    await run('DELETE FROM chat_messages WHERE room_id=? AND seq<=?',r.id,seq-100);
+    return seq;
+  }
+  const save = async r => { syncPresentationHumans(r);const comment=chooseBotComment(r);if(comment)r.botChatSeq=await appendChat(r,comment);r.version = (r.version || 0) + 1; r.savedAt = Date.now(); (await run('INSERT INTO rooms VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data', r.id, JSON.stringify(r))); return r; };
   const wallet = async (id, context) => (await get('SELECT available,reserved FROM wallets WHERE user_id=? AND context=?', id, context)) || { available: 0, reserved: 0 };
   const money = async (id, context, delta, reservedDelta, reason, reference) => {
     if ((await get('SELECT id FROM ledger WHERE user_id=? AND context=? AND reason=? AND reference=?', id, context, reason, reference))) return false;
@@ -79,7 +88,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
       return { ...p, name, avatar:avatar(p.id), online: connections.has(p.id) };
     });
   }
-  const safeRoom = (r, user) => ({ serverTime:Date.now(),viewerId:user.id,started:r.started, id: r.id, name: r.name, game: r.game, context: r.context, stake: r.stake, status: r.status,
+  const safeRoom = (r, user) => ({ serverTime:Date.now(),viewerId:user.id,started:r.started,botChatSeq:r.botChatSeq||0, id: r.id, name: r.name, game: r.game, context: r.context, stake: r.stake, status: r.status,
     joinable: acceptsSeat(r), practice:!!r.practice, capacity:r.capacity||6, botDifficulty:r.botDifficulty||'medium', pace:r.pace||'standard', manualResults:r.manualResults!==false, smallBlind:r.smallBlind, bigBlind:r.bigBlind, players: roomSeats(r.players), host: r.host, private: r.private, pot: r.stake * r.players.length, version: r.version, created: r.created, finished: r.finished, payout: r.payouts?.[user.id],
     code: r.players.some(p => p.id === user.id) ? r.code : undefined,
     state: r.state && r.players.some(p => p.id === user.id && !p.left) ? viewGame(r.state, user.id) : null });
@@ -376,7 +385,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         let r=await room(chatMatch[1]);
         const allowed=()=>r.players.some(p=>p.id===user.id&&!p.left);
         if(!allowed())fail('Only seated players can use table chat',403);
-        const viewChat=async()=>({messages:(await all('SELECT data FROM chat_messages WHERE room_id=? ORDER BY seq',r.id)).map(row=>{const m=JSON.parse(row.data);return {...m,avatar:avatar(m.userId)};}),cursor:(await get('SELECT seq FROM chat_channels WHERE room_id=?',r.id))?.seq||0});
+        const viewChat=async()=>({messages:(await all('SELECT data FROM chat_messages WHERE room_id=? ORDER BY seq',r.id)).map(row=>{const m=JSON.parse(row.data),seat=roomSeats(r.players).find(p=>p.id===m.userId);return {...m,avatar:seat?.avatar||avatar(m.userId)};}),cursor:(await get('SELECT seq FROM chat_channels WHERE room_id=?',r.id))?.seq||0});
         if(req.method==='GET')return send(await viewChat());
         rate(user.id+':chat',12,15000);
         await tx(async()=>{
@@ -412,7 +421,7 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
         const activeTable = (await rooms(true)).find(r => r.players.some(p => p.id === user.id && !p.left));
         return send({ user: publicUser(user), context,
           activeTable: activeTable ? {id:activeTable.id,name:activeTable.name,game:activeTable.game,context:activeTable.context} : null, events: (await events()), wallet: (await wallet(user.id, context)), participating: !!(await get('SELECT user_id FROM wallets WHERE user_id=? AND context=?', user.id, context)), settings: (await settings()),
-          tables: (await rooms()).filter(r => r.context === context && ((!r.private && (['waiting','playing','paused'].includes(r.status)||r.practice&&r.status==='finished')) || r.players.some(p => p.id === user.id))).slice(-100).map(r => safeRoom(r, user)),
+          tables: (await rooms()).filter(r => r.context === context && ['waiting','playing','paused'].includes(r.status) && (!r.private || r.players.some(p => p.id === user.id))).slice(-100).map(r => safeRoom(r, user)),
           leaderboard: (await board(context)), history: (await rooms()).filter(r => r.context === context && r.settled && r.players.some(p => p.id === user.id)).slice(-20).reverse().map(r => safeRoom(r, user)) });
       }
       const tableMatch = /^\/api\/tables\/([^/]+)(?:\/(join|start|leave|action|manage))?$/.exec(path);

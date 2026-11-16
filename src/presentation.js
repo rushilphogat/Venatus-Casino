@@ -14,11 +14,13 @@ export function beginPresentation(game, kind, now, minimum = 8000, maximum = 200
   const manual = Boolean(game.manualResults && required.length === 1);
   game.presentationSequence = (game.presentationSequence || 0) + 1;
   const id = `${game.type}:${now}:${game.presentationSequence}:${kind}`;
-  // Major scenes occupy up to 2.5 seconds; reserve at least six readable seconds afterwards.
+  // Cinematic time and reading time are separate; Quick never shortens reading below these floors.
   const major = !['ohhell-trick','poker-uncontested'].includes(kind);
-  const protectedMinimum = major ? Math.max(8500, paced(game, minimum + 2500)) : paced(game, minimum);
+  const cinematicMs = kind==='poker-showdown'?7000:6000;
+  const readingMs = kind==='poker-showdown'?18000:10000;
+  const protectedMinimum = major ? cinematicMs + Math.max(readingMs,paced(game,minimum)) : paced(game,minimum);
   game.presentation = { id, kind, startedAt: now, minimumUntil: now + protectedMinimum,
-    maximumUntil: now + (manual ? 86400000 : paced(game, maximum)), required, ready: [], manual };
+    maximumUntil: now + (manual ? 86400000 : Math.max(protectedMinimum+8000,paced(game,maximum))), required, ready: [], manual };
   game.deadline = game.presentation.minimumUntil;
   return game.presentation;
 }

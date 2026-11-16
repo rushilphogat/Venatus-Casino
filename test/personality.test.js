@@ -16,9 +16,10 @@ test('quick comments are bounded and only selected for their exact public event'
   assert.equal(commentFor('bluff','private_hand_strength','seed'),'');
   assert.ok(comments.some(c=>c.trigger==='honest_claim'&&c.text===commentFor('bluff','honest_claim','seed')));
 });
-test('quick pace still leaves six readable seconds after the longest major cinematic',()=>{
+test('quick pace reserves reading time separately from long cinematics',()=>{
   for(const pace of ['quick','standard','relaxed']){
     const game={type:'bluff',players:['a','b']};configurePresentation(game,{pace});
-    const p=beginPresentation(game,'bluff-verdict',100,8000,20000);assert.ok(p.minimumUntil-p.startedAt-2500>=6000);assert.ok(p.maximumUntil>p.minimumUntil);
+    const p=beginPresentation(game,'bluff-verdict',100,8000,20000);assert.ok(p.minimumUntil-p.startedAt-6000>=10000);assert.ok(p.maximumUntil>p.minimumUntil);
+    const poker=beginPresentation(game,'poker-showdown',100,11000,20000);assert.ok(poker.minimumUntil-poker.startedAt-7000>=18000);
   }
 });

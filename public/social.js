@@ -13,7 +13,7 @@ function colourChoices(game, action) {
 function colorControls(room, ui) {
   const g = room.state, own = g.turn === ui.state.user.id;
   if(g.presentation)return presentationControls(room,ui.state.user.id);
-  if (g.phase === 'round-end') return '<button class="primary" data-action="chromatic-action" data-move="next-round">Deal next round</button>';
+  if (g.phase === 'round-end') return '<button class="primary" data-action="chromatic-action" data-move="next-round">Finish match</button>';
   if (g.phase === 'choose-color') return own ? colourChoices(g,'starting-colour') : '';
   const moves = [];
   const move = (key,label) => `<button data-action="chromatic-action" data-move="${key}">${label}</button>`;
@@ -70,7 +70,7 @@ function turnInfo(room, ui) {
   const g = room.state, own = g.turn === ui.state.user.id;
   if (room.status === 'paused') return ['Table paused',''];
   if (g.phase === 'finished') return [g.winner ? `${ui.name(g.winner)} wins` : 'Draw', room.practice ? '' : `${ui.fmt(room.pot)} chips settled`];
-  if (g.phase === 'round-end') return [`${ui.name(g.roundWinner)} wins round ${g.round}`, `+${g.roundPoints} points · first to ${g.targetScore}`];
+  if (g.phase === 'round-end') return [`${ui.name(g.roundWinner)} wins`, 'Match complete'];
   if (room.game==='bluff') {
     if(g.phase==='reveal')return [g.reveal?.lied?'Bluff exposed':'Honest claim','Take a look at the cards.'];
     if (g.phase==='challenge') return [g.lastPlay.player === ui.state.user.id ? 'Waiting for challenges' : 'Challenge this claim?', ''];

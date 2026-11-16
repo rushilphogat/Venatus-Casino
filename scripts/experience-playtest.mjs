@@ -5,14 +5,14 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE),dir=await mkdtemp(join(tmpdir(),'venatus-controls-'));
 const app=await createApp({dbPath:join(dir,'db.sqlite'),databaseUrl:'',secureCookies:false,tickMs:1000});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1920,height:1080}}),base='http://127.0.0.1:'+app.server.address().port,errors=[];page.on('pageerror',e=>errors.push(e.message));
+const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1920,height:1080}}),base='http://127.0.0.1:'+app.server.address().port,errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addLocatorHandler(page.locator('.cinema[open]'),async()=>page.locator('[data-cinema-close]').click());
 try{
  await page.goto(base);await page.locator('#auth-form [name=name]').fill('Controls');await page.locator('#auth-form [type=submit]').click();await page.locator('[data-action=create-table]').click();
  const group=name=>page.locator(`.segment-control:has(select[name=${name}])`);
  await group('capacity').getByRole('button',{name:'2',exact:true}).click();assert.equal(await page.locator('[name=capacity]').inputValue(),'2');assert.equal(await group('bots').getByRole('button',{name:'5',exact:true}).isDisabled(),true);
  await group('capacity').getByRole('button',{name:'6',exact:true}).click();await group('bots').getByRole('button',{name:'5',exact:true}).click();
  assert.equal(await page.locator('[name=bots]').inputValue(),'5');assert.equal(await group('bots').getByRole('button',{name:'5',exact:true}).getAttribute('aria-pressed'),'true');assert.equal(await group('bots').getByRole('button',{name:'None',exact:true}).getAttribute('aria-pressed'),'false');
- await page.locator('#create-table-form .primary').click();await page.locator('[data-action=start-table]').click();await page.locator('#bet-slider').waitFor({timeout:25000});
+ await page.locator('#create-table-form .primary').click();await page.locator('[data-action=start-table]').click();await page.locator('.bot-comment-toast').waitFor();assert.match(await page.locator('.bot-comment-toast').innerText(),/Bot/);await page.locator('#bet-slider').waitFor({timeout:25000});
  const slider=page.locator('#bet-slider');await slider.focus();await page.keyboard.press('ArrowRight');assert.equal(await slider.inputValue(),await page.locator('#bet-amount').inputValue());
  const b=await slider.boundingBox();await page.mouse.move(b.x+b.width*.7,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width*.8,b.y+b.height/2,{steps:5});await page.mouse.up();
  assert.ok(Number(await slider.inputValue())>100);assert.equal(await slider.inputValue(),await page.locator('#bet-amount').inputValue());

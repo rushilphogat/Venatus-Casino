@@ -86,6 +86,13 @@ test('active two-hour table is not refunded and simultaneous Ready cannot skip p
   await f.restart();const recovered=await f.ok(`/api/tables/${r.id}`,a.cookie);assert.equal(recovered.state.phase,'between-hands');assert.ok(recovered.state.presentation.minimumUntil>Date.now());
 });
 
+test('bot event comments are persisted once in the shared chat without changing state on reads',async t=>{
+ const f=await fixture(t),u=await f.guest('Listener');let r=await f.ok('/api/tables',u.cookie,{name:'Table talk',game:'bluff',stake:0,bots:2});
+ r=await f.ok(`/api/tables/${r.id}/start`,u.cookie,{});const before=r.version;
+ let chat=await f.ok(`/api/tables/${r.id}/chat`,u.cookie);assert.equal(chat.messages.length,1);const message=chat.messages[0];assert.equal(message.bot,true);assert.equal(message.trigger,'round_start');assert.ok(r.players.some(p=>p.bot&&p.id===message.userId));assert.ok(r.botChatSeq>0);
+ chat=await f.ok(`/api/tables/${r.id}/chat`,u.cookie);assert.equal(chat.messages.length,1);assert.equal((await f.ok(`/api/tables/${r.id}`,u.cookie)).version,before);
+ await f.restart();chat=await f.ok(`/api/tables/${r.id}/chat`,u.cookie);assert.equal(chat.messages[0].id,message.id);assert.equal(chat.messages[0].text,message.text);
+});
 test('static assets are served inside public only, and profile JSON limit is isolated',async t=>{
   const f=await fixture(t),u=await f.guest('Files');
   assert.equal((await f.request('/logo.png',u.cookie)).status,200);

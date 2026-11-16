@@ -16,6 +16,9 @@ function client(){
  ctx.ui.state.user={id:'a',name:'Alice',role:'player'};
  return {...ctx.ui,app,modal};
 }
+test('finished casual tables never appear as unjoinable in-progress games',()=>{
+ const c=client();c.state.lobby={events:[],settings:{},tables:[{id:'ended',name:'ENDED MATCH',game:'poker',practice:true,status:'finished',players:[{id:'a'}],joinable:false},{id:'open',name:'OPEN MATCH',game:'poker',practice:true,status:'waiting',players:[],joinable:true}]};c.renderLobby();assert.doesNotMatch(c.app.innerHTML,/ENDED MATCH/);assert.match(c.app.innerHTML,/OPEN MATCH/);
+});
 test('casual and event lobbies show distinct economies',()=>{
  const c=client();c.state.lobby={events:[],tables:[],wallet:{available:9999},settings:{},leaderboard:[]};c.renderLobby();
  assert.match(c.app.innerHTML,/Card room/);assert.doesNotMatch(c.app.innerHTML,/9,999/);

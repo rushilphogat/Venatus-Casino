@@ -1,24 +1,23 @@
-import {createApp} from '../src/server.js';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';import {join} from 'node:path';import assert from 'node:assert/strict';
-const {chromium}=await import(process.env.PLAYWRIGHT_MODULE),dir=await mkdtemp(join(tmpdir(),'venatus-scenes-'));
-const app=await createApp({dbPath:join(dir,'db.sqlite'),databaseUrl:'',secureCookies:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+import {createApp} from '../src/server.js';import {mkdtemp,mkdir,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import assert from 'node:assert/strict';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),dir=await mkdtemp(join(tmpdir(),'venatus-scenes-')),out='work/cinema-captures';
+const app=await createApp({dbPath:join(dir,'db.sqlite'),databaseUrl:'',secureCookies:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await mkdir('work/overhaul-captures',{recursive:true});
- await page.goto('http://127.0.0.1:'+app.server.address().port);await page.locator('#auth-form [name=name]').fill('Scenes');await page.locator('#auth-form [type=submit]').click();await page.locator('.game-picker').waitFor();
- const results=await page.evaluate(async()=>{
-  const {syncLounge}=await import('/lounge.js');const variants=[];
-  const cards=[{id:'shown-ace',rank:'A',suit:'spades'},{id:'shown-king',rank:'K',suit:'hearts'},{id:'shown-queen',rank:'Q',suit:'clubs'},{id:'shown-jack',rank:'J',suit:'diamonds'},{id:'shown-ten',rank:'10',suit:'spades'}];
-  for(const family of ['poker','caught','honest','chromatic','rummy'])for(let n=1;n<=3;n++){
-   const room={id:'fixture-'+family,game:['caught','honest'].includes(family)?'bluff':family,players:[{id:'a',name:'Fox'},{id:'b',name:'Owl'}],state:{type:family,phase:'finished',round:n,handNumber:n,moves:n,winner:'a',scores:{a:40,b:10},hand:[{id:'SECRET',rank:'2',suit:'hearts'}]}};
-   if(family==='poker')room.state.lastResult={id:'result-'+n,handNumber:n,pot:120,board:cards,showdown:{a:{hand:cards.slice(0,2),name:'Straight'}},pots:[{amount:80,winners:['a']},{amount:40,winners:['b']}]};
+ await mkdir(out,{recursive:true});await page.goto('http://127.0.0.1:'+app.server.address().port);await page.locator('#auth-form [name=name]').fill('Scenes');await page.locator('#auth-form [type=submit]').click();await page.locator('.game-picker').waitFor();
+ const variants=await page.evaluate(async()=>{
+  const {syncLounge}=await import('/lounge.js');const cards=[{id:'shown-ace',rank:'A',suit:'spades'},{id:'shown-king',rank:'K',suit:'hearts'},{id:'shown-queen',rank:'Q',suit:'clubs'},{id:'shown-jack',rank:'J',suit:'diamonds'},{id:'shown-ten',rank:'10',suit:'spades'}];
+  window.showFixture=(family,n)=>{
+   const room={id:'fixture-'+family,game:['caught','honest'].includes(family)?'bluff':family,status:'finished',started:100,viewerId:'a',players:[{id:'a',name:'Fox',avatar:{kind:'preset',id:0}},{id:'b',name:'Owl',avatar:{kind:'preset',id:4}}],state:{type:family,phase:'finished',round:n,handNumber:n,moves:n,winner:'a',scores:{a:40,b:10},hand:[{id:'SECRET',rank:'2',suit:'hearts'}]}};
+   if(family==='poker')room.state.lastResult={id:'result-'+n,handNumber:n,pot:120,board:cards,showdown:{a:{hand:[{id:'hole-a',rank:'A',suit:'clubs'},{id:'hole-b',rank:'K',suit:'clubs'}],name:'Straight',description:'ace-high straight',cardIds:cards.map(c=>c.id)},b:{hand:[{id:'hole-c',rank:'3',suit:'clubs'},{id:'hole-d',rank:'3',suit:'hearts'}],name:'Straight',description:'ace-high straight',cardIds:cards.map(c=>c.id)}},pots:[{amount:80,winners:['a']},{amount:40,winners:['b']}]};
    if(['caught','honest'].includes(family))room.state.reveal={id:'challenge-'+n,lied:family==='caught',collector:'b',player:'a',challenger:'b',cards:cards.slice(0,2),count:2,collectedCount:6,rank:'A'};
-   if(family==='chromatic')room.state.topCard={id:'color-public',color:'red',value:'5'};
-   syncLounge({id:room.id},room);const scene=document.querySelector('.scene-overlay');variants.push({id:scene?.dataset.scene,privateCount:scene?.querySelectorAll('[data-card-id=SECRET]').length,pots:scene?.querySelectorAll('.scene-pot').length});
-  }return variants;
- });assert.equal(new Set(results.map(v=>v.id)).size,15);assert.ok(results.every(v=>v.privateCount===0));assert.ok(results.slice(0,3).every(v=>v.pots===2));
- await page.waitForTimeout(700);await page.screenshot({path:'work/overhaul-captures/creative-scene.png'});
- await page.locator('.scene-skip').click();assert.equal(await page.locator('.scene-overlay').count(),0);assert.deepEqual(errors,[]);console.log('PASS: 15 public-only scene variants, independent side-pot rows, private-card exclusion, skip cleanup');
+   if(family==='chromatic')room.state.topCard={id:'color-public',color:'ruby',value:'5'};
+   syncLounge({id:room.id},room);return room;
+  };
+  const results=[];for(const family of ['poker','caught','honest','chromatic','rummy'])for(let n=1;n<=3;n++){window.showFixture(family,n);const scene=document.querySelector('.cinema[open]');results.push({id:scene?.dataset.scene,privateCount:scene?.querySelectorAll('[data-card-id=SECRET]').length,pots:scene?.querySelectorAll('.cinema-awards>div').length});}return results;
+ });assert.equal(new Set(variants.map(v=>v.id)).size,15);assert.ok(variants.every(v=>v.privateCount===0));assert.ok(variants.slice(0,3).every(v=>v.pots===2));
+ await page.evaluate(()=>window.showFixture('poker',99));assert.equal(await page.locator('.cinema').getAttribute('data-shot'),'0');
+ await page.waitForTimeout(1700);assert.equal(await page.locator('.cinema').getAttribute('data-shot'),'1');await page.waitForTimeout(5700);assert.equal(await page.locator('.cinema').getAttribute('data-shot'),'4');
+ for(const [name,width,height]of [['poker-hd',1920,1080],['poker-4k',3840,2160],['poker-phone',390,844]]){await page.setViewportSize({width,height});await page.screenshot({path:join(out,name+'.png')});const metrics=await page.locator('.cinema').evaluate(el=>({width:innerWidth,scroll:el.scrollWidth,footer:el.querySelector('.cinema-footer').getBoundingClientRect().bottom,wide:[...el.querySelectorAll('*')].filter(n=>n.getBoundingClientRect().right>innerWidth+1).map(n=>[n.className,Math.round(n.getBoundingClientRect().right)])}));console.log(name,metrics);assert.ok(metrics.scroll<=width+1,JSON.stringify(metrics));assert.ok(metrics.footer<=height+1);}
+ await page.waitForTimeout(10000);assert.equal(await page.locator('.cinema[open]').count(),1,'Result must remain open for reading');await page.locator('[data-cinema-close]').click();assert.equal(await page.locator('.cinema').count(),0);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>window.showFixture('caught',100));assert.equal(await page.locator('.cinema').getAttribute('data-shot'),'4');await page.screenshot({path:join(out,'bluff-phone.png')});await page.keyboard.press('Escape');assert.equal(await page.locator('.cinema').count(),0);
+ assert.deepEqual(errors,[]);console.log('PASS: 15 scene motifs, staged seven-second poker reveal, persistent readable result, side pots/hand labels, no private cards, HD/4K/phone and reduced-motion Escape');
 }finally{await browser.close();await app.close();await rm(dir,{recursive:true,force:true});}
-

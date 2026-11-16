@@ -29,6 +29,7 @@ async function seat(game, index, code) {
   const mobile=index===1;
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:900},isMobile:mobile,hasTouch:mobile});
   const page=await context.newPage();
+  await page.addLocatorHandler(page.locator('.cinema[open]'),async()=>page.locator('[data-cinema-close]').click());
   page.setDefaultTimeout(8500);
   await page.addInitScript(() => {
     window.motionEvents = { css:0, web:0 };
@@ -164,7 +165,7 @@ async function scenario(game) {
       const other=players.find(p=>p.id!==actor.id);
       const called=await clickMove(other,r,action(other.page,'challenge'));assert.equal(called.state.reveal.cards.length,2);
       for(const p of players)await clickMove(p,r,p.page.locator('[data-lounge=ready]'));
-      await page.waitForFunction(()=>!document.querySelector('[data-lounge=ready]'),null,{timeout:15000});
+      await page.waitForFunction(()=>!document.querySelector('[data-lounge=ready]'),null,{timeout:25000});
       actor=await getActor();await clickMove(actor,r,action(actor.page,'bluff-skip'));
     } else if(game==='chromatic'){
       let plays=0;
@@ -235,7 +236,7 @@ async function sixSeatLayout(game) {
       assert.equal(response.status(),200,await response.text());if(!i)table=await response.json();
     }
     const start=await contexts[0].request.post(origin+'/api/tables/'+table.id+'/start',{data:{}});assert.equal(start.status(),200);
-    const page=await contexts[0].newPage();page.on('pageerror',e=>errors.add(e.message));
+    const page=await contexts[0].newPage();await page.addLocatorHandler(page.locator('.cinema[open]'),async()=>page.locator('[data-cinema-close]').click());page.on('pageerror',e=>errors.add(e.message));
     await page.goto(origin);await page.locator('.game-room .hand').first().waitFor();
     await measure({page},game,'six-desktop');
     await page.setViewportSize({width:390,height:844});await measure({page},game,'six-mobile');

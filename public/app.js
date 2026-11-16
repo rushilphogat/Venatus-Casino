@@ -107,17 +107,18 @@ function tableRow(table) {
   const own=table.players?.some(p=>p.id===state.user.id && !p.left);
   const left=table.players?.some(p=>p.id===state.user.id && p.left);
   const count=table.players?.length||0, capacity=table.capacity||6;
-  const status=table.status==='paused'?'Paused':table.joinable?'Open':table.status==='finished'?'Finished':count>=capacity?'Full':'In play';
+  const ended=['finished','canceled'].includes(table.status);
+  const status=ended?(table.status==='finished'?'Finished':'Closed'):table.status==='paused'?'Paused':table.joinable?'Open':count>=capacity?'Full':'In play';
   return `<tr><td><strong>${esc(table.name)}</strong>${table.private?'<small>Private table</small>':''}</td>
     <td><span class="table-status ${table.joinable?'is-open':''}">${status}</span></td>
     <td>${count}<span class="muted"> / ${capacity}</span></td><td class="number">${table.practice && table.game!=='poker'?'—':fmt(table.stake)}</td>
-    <td><button data-action="join-table" data-id="${esc(table.id)}" ${left || !own && !table.joinable?'disabled':''}>${own?'Return':table.joinable?'Join':'In progress'}</button></td></tr>`;
+    <td><button data-action="join-table" data-id="${esc(table.id)}" ${left || !own && (ended||!table.joinable)?'disabled':''}>${own?(ended?'Results':'Return'):ended?'Finished':table.joinable?'Join':status}</button></td></tr>`;
 }
 function renderLobby() {
   const data=state.lobby;if(!data)return;
   const events=data.events||[], event=events.find(e=>e.id===state.context);
   const game=gameCatalog.find(g=>g.id===state.lobbyGame)||gameCatalog[0];
-  const tables=(data.tables||[]).filter(t=>t.game===game.id && (['waiting','playing','paused'].includes(t.status)||t.practice&&t.status==='finished'));
+  const tables=(data.tables||[]).filter(t=>t.game===game.id && ['waiting','playing','paused'].includes(t.status));
   const settings=data.settings||{};
   const configured=settings[game.id]!==false && !settings.maintenance;
   const stakeAllowed=!event || (event.minStake!==undefined ? event.maxStake>=(game.id==='poker'?10:0) : availableStakes(game.id,event).length>0);
@@ -300,7 +301,7 @@ setInterval(updateTimer, 500);
 function openModal(title, content) { modal.innerHTML = `<div class="modal-head"><h2>${title}</h2><button class="close" data-action="close-modal" aria-label="Close dialog">×</button></div>${content}`; modal.showModal(); }
 function rules(game) {
   if (game === 'bluff') return openModal('Bluff · Street rules','<p>Choose a rank to open the pile. Select 1–4 cards and declare that many cards of the chosen rank, then play them face-down. You may tell the truth or bluff.</p><p>Everyone keeps declaring the same rank. On your turn, play or skip. After all players skip consecutively, the pile is cleared and the next player chooses a new rank.</p><p>After each play, other players have eight seconds to call bluff. A liar collects the whole pile; if the declaration was honest, the challenger collects it. Either challenge outcome resets the rank. The player after the declarer starts again.</p><p>Your final cards must survive the challenge window before you win the pot. A timed-out turn skips automatically.</p>');
-  if (game === 'chromatic') return openModal('Chromatic · Street rules','<p>Match the colour or symbol. Reverse changes direction, Skip jumps a player, and Wild chooses the colour.</p><p><strong>Stack +2 on +2. Stack +4 on +2 or +4.</strong> You cannot put +2 on +4. If you cannot or do not want to stack, collect the total penalty and miss your turn. Street Wild +4 has no legality challenge.</p><p>Declare “One card!” as you play down to one. Opponents can catch a missed declaration for a two-card penalty. Normal draws allow you to play the drawn card if it matches, or keep it and pass.</p><p>First to 500 points wins the match and the pot. A final penalty card makes the next player draw before round points are counted.</p>');
+  if (game === 'chromatic') return openModal('Chromatic · Street rules','<p>Match the colour or symbol. Reverse changes direction, Skip jumps a player, and Wild chooses the colour.</p><p><strong>Stack +2 on +2. Stack +4 on +2 or +4.</strong> You cannot put +2 on +4. If you cannot or do not want to stack, collect the total penalty and miss your turn. Street Wild +4 has no legality challenge.</p><p>Declare “One card!” as you play down to one. Opponents can catch a missed declaration for a two-card penalty. Normal draws allow you to play the drawn card if it matches, or keep it and pass.</p><p>First to play their last card wins this single-round match. A final penalty card makes the next player draw before round points are counted.</p>');
   const extra = {
     poker: '<p>No-limit Texas Hold’em for 2–6 players. Your buy-in becomes your table stack. Two private cards and five community cards form your best five-card hand.</p><ul><li>Small blind is 1% of the buy-in, rounded down (minimum 1); big blind is twice that. Raise amounts are total wagers for the current street.</li><li>All-ins create side pots. Short all-ins do not automatically reopen betting. Tied pots split, with odd chips awarded clockwise after the dealer.</li><li>Sessions last up to 10 hands. Any player can request cash-out after the current hand or cash out between hands. Each remaining stack returns to its owner.</li><li>Timeout checks when possible, otherwise folds. Cancellation refunds the interrupted hand’s bets and preserves completed hand results.</li></ul>',
     ohhell: '<p>Oh Hell for 3–6 players. Nine rounds deal 1, 2, 3, 4, 5, 4, 3, 2, then 1 card. The exposed card determines trump.</p><ul><li>Bid your expected tricks. The dealer bids last and cannot make the total bids equal the number of tricks.</li><li>Follow the led suit when you can. Highest trump wins; otherwise highest card of the led suit wins. The winner leads next.</li><li>An exact bid earns 10 plus the bid; a miss earns zero. Highest final score wins. Tied leaders split the pot; odd chips follow seating order.</li></ul>',

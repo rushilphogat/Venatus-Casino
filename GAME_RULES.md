@@ -16,7 +16,7 @@ Match color or value, or play a Wild and choose a color. Drawing allows only tha
 
 Wild Draw Four is legal only without a matching-color card, but bluffing with it is permitted. Its recipient has eight seconds to accept four or challenge. A successful challenge makes the offender draw four and preserves the challenger's turn. A failed challenge costs six and the turn. Evidence is private to the challenger. Final-card penalties apply before scoring.
 
-Use **One card!** when playing down to one. Before the next player's action, an opponent can catch a missed declaration for two cards; the player can also declare before being caught. Round winners score opponents' numbers at face value, action cards at 20 and wilds at 50. First to 500 wins the match and pot. Round breaks last 15 seconds or a player may deal sooner. Turn timeout draws and passes. Empty draw piles recycle discards except the top card.
+Use **One card!** when playing down to one. Before the next player's action, an opponent can catch a missed declaration for two cards; the player can also declare before being caught. Round winners score opponents' numbers at face value, action cards at 20 and wilds at 50. First to empty their hand wins this single-round match and its pot. A rematch starts a fresh match. Turn timeout draws and passes. Empty draw piles recycle discards except the top card.
 
 Reference: [Mattel classic UNO instructions](https://service.mattel.com/instruction_sheets/UNO%20Basic%20IS.pdf). Chromatic retains its own name and artwork. Previously persisted version-1 matches retain their original rules; new matches use these rules.
 
