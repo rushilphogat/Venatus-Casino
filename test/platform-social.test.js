@@ -93,6 +93,60 @@ test('bot event comments are persisted once in the shared chat without changing 
  chat=await f.ok(`/api/tables/${r.id}/chat`,u.cookie);assert.equal(chat.messages.length,1);assert.equal((await f.ok(`/api/tables/${r.id}`,u.cookie)).version,before);
  await f.restart();chat=await f.ok(`/api/tables/${r.id}/chat`,u.cookie);assert.equal(chat.messages[0].id,message.id);assert.equal(chat.messages[0].text,message.text);
 });
+
+test('Bluff calls survive unrelated versions, resolve once and never challenge a newer claim',async t=>{
+  const f=await fixture(t),a=await f.guest('Declarer'),b=await f.guest('Caller'),c=await f.guest('Leaving'),d=await f.guest('Other caller');
+  let r=await f.ok('/api/tables',a.cookie,{name:'Challenge race',game:'bluff',stake:0,capacity:4});
+  const path=`/api/tables/${r.id}`;
+  for(const p of [b,c,d])await f.ok(path+'/join',p.cookie,{});
+  r=await f.ok(path+'/start',a.cookie,{});
+  const post=(p,version,action,actionId=randomUUID())=>f.request(path+'/action',p.cookie,{expectedVersion:version,actionId,action});
+  r=(await post(a,r.version,{type:'play',rank:r.state.hand[0].rank,cards:[r.state.hand[0].id]})).body;
+  const oldVersion=r.version,claimId=r.state.lastPlay.id;
+  await f.ok(path+'/leave',c.cookie,{});
+  const current=await f.ok(path,b.cookie);assert.ok(current.version>oldVersion);
+  assert.equal((await post(b,oldVersion,{type:'challenge'})).status,409,'Unidentified stale actions still rejected');
+  assert.equal((await post(b,current.version,{type:'challenge',claimId:'wrong'})).status,409);
+  assert.equal((await post(a,oldVersion,{type:'challenge',claimId})).status,400,'Cannot challenge yourself');
+  assert.equal((await post(c,oldVersion,{type:'challenge',claimId})).status,403,'Departed players cannot act');
+  const ids=[randomUUID(),randomUUID()],callers=[b,d];
+  const responses=await Promise.all(callers.map((p,i)=>post(p,oldVersion,{type:'challenge',claimId},ids[i])));
+  assert.deepEqual(responses.map(x=>x.status).sort(),[200,409]);
+  assert.match(responses.find(x=>x.status===409).body.error,/claim.*closed/);
+  const winnerIndex=responses.findIndex(x=>x.status===200),won=responses[winnerIndex].body;
+  assert.equal(won.state.phase,'reveal');assert.equal(won.state.reveal.collector,callers[winnerIndex].id);
+  assert.equal(Object.values(won.state.counts).reduce((n,x)=>n+x,0),52);
+  const duplicate=await post(callers[winnerIndex],oldVersion,{type:'challenge',claimId},ids[winnerIndex]);
+  assert.equal(duplicate.status,200);assert.equal(duplicate.body.version,won.version);
+  const ready={type:'ready',presentationId:won.state.presentation.id};
+  await post(b,won.version,ready);r=(await post(d,won.version,ready)).body;
+  assert.equal(r.state.phase,'play');assert.equal(r.state.reveal,null);assert.ok(r.state.lastReveal);
+  r=await f.ok(path,b.cookie);
+  const newer=(await post(b,r.version,{type:'play',rank:r.state.hand[0].rank,cards:[r.state.hand[0].id]})).body;
+  assert.notEqual(newer.state.lastPlay.id,claimId);
+  const delayed=await post(d,newer.version,{type:'challenge',claimId});
+  assert.equal(delayed.status,409);assert.match(delayed.body.error,/claim.*closed/);
+  assert.equal((await f.ok(path,d.cookie)).version,newer.version);
+});
+
+test('Bluff bot abstention does not change public version or invalidate a pending call',async t=>{
+  const f=await fixture(t),a=await f.guest('Dealer'),b=await f.guest('Human caller');
+  let r=await f.ok('/api/tables',a.cookie,{name:'Bot abstention',game:'bluff',stake:0,bots:2,capacity:4});
+  const path=`/api/tables/${r.id}`;await f.ok(path+'/join',b.cookie,{});r=await f.ok(path+'/start',a.cookie,{});
+  r=await f.ok(path+'/action',a.cookie,{expectedVersion:r.version,actionId:randomUUID(),action:{type:'play',rank:r.state.hand[0].rank,cards:[r.state.hand[0].id]}});
+  t.mock.method(Math,'random',()=>.999);
+  const stored=JSON.parse((await f.app.storage.get('SELECT data FROM rooms WHERE id=?',r.id)).data);
+  stored.savedAt=Date.now()-4000;
+  await f.app.storage.run('UPDATE rooms SET data=? WHERE id=?',JSON.stringify(stored),r.id);
+  let checked;for(let i=0;i<80;i++){
+    checked=JSON.parse((await f.app.storage.get('SELECT data FROM rooms WHERE id=?',r.id)).data);
+    if(checked.botChallengeChecked===r.state.moves)break;
+    await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  assert.equal(checked.botChallengeChecked,r.state.moves);assert.equal(checked.version,r.version);assert.equal(checked.savedAt,stored.savedAt);
+  const result=await f.ok(path+'/action',b.cookie,{expectedVersion:r.version,actionId:randomUUID(),action:{type:'challenge',claimId:r.state.lastPlay.id}});
+  assert.equal(result.state.phase,'reveal');assert.equal(result.state.reveal.challenger,b.id);
+});
 test('static assets are served inside public only, and profile JSON limit is isolated',async t=>{
   const f=await fixture(t),u=await f.guest('Files');
   assert.equal((await f.request('/logo.png',u.cookie)).status,200);

@@ -35,7 +35,7 @@ function colorControls(room, ui) {
 function bluffControls(room, ui) {
   const g = room.state, viewer = ui.state.user.id;
   if(g.presentation)return presentationControls(room,viewer);
-  if (g.phase === 'challenge') return g.lastPlay?.player !== viewer ? '<button class="challenge-button" data-action="challenge">Call bluff</button>' : '';
+  if (g.phase === 'challenge') return g.lastPlay?.player !== viewer ? `<button class="challenge-button" data-action="challenge" data-claim-id="${ui.esc(g.lastPlay.id)}">Call bluff</button>` : '';
   if (g.turn !== viewer) return '';
   const count = ui.state.selected.size;
   const pick = g.requiredRank ? '' : `<label class="claim-picker">Claim rank <select id="bluff-rank">${g.ranks.map(r => `<option ${r===ui.claimRank?'selected':''}>${ui.esc(r)}</option>`).join('')}</select></label>`;

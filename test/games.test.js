@@ -49,6 +49,33 @@ test('Bluff rejects wrong turns, stolen cards, duplicates, self-challenges and l
   assert.throws(() => actGame(next, 'intruder', { type: 'challenge' }, 2), /seated/);
 });
 
+test('Bluff claim identities reject delayed calls without exposing face-down cards', () => {
+  const game=createGame('bluff',players,0,{houseRules:'street'});
+  const played=actGame(game,'alice',{type:'play',rank:'A',cards:[game.hands.alice[0].id]},1);
+  const claim=viewGame(played,'bob').lastPlay;
+  assert.equal(typeof claim.id,'string');assert.equal(claim.cards,undefined);
+  assert.equal(viewGame(played,'cara').lastPlay.id,claim.id);
+  assert.throws(()=>actGame(played,'bob',{type:'challenge',claimId:'old-claim'},2),/claim.*closed/);
+  const next=tickGame(played,played.deadline);
+  const newer=actGame(next,'bob',{type:'play',rank:'A',cards:[next.hands.bob[0].id]},played.deadline+1);
+  assert.notEqual(viewGame(newer,'cara').lastPlay.id,claim.id);
+  assert.throws(()=>actGame(newer,'cara',{type:'challenge',claimId:claim.id},played.deadline+2),/claim.*closed/);
+  delete played.lastPlay.id;
+  const legacy=viewGame(played,'bob').lastPlay.id;
+  assert.ok(legacy);assert.equal(actGame(played,'bob',{type:'challenge',claimId:legacy},2).phase,'reveal');
+});
+
+test('Bluff clears the active verdict after Continue or timeout while keeping replay evidence', () => {
+  const game=createGame('bluff',players,0,{houseRules:'street',humanPlayers:['bob']});
+  const played=actGame(game,'alice',{type:'play',rank:'A',cards:[game.hands.alice[0].id]},1);
+  const result=actGame(played,'bob',{type:'challenge',claimId:played.lastPlay.id},2);
+  for(const next of [actGame(result,'bob',{type:'ready'},3),tickGame(result,result.presentation.maximumUntil)]){
+    assert.equal(next.phase,'play');assert.equal(next.turn,'bob');assert.equal(next.reveal,null);
+    assert.equal(next.presentation,null);assert.equal(next.declaredRank,null);
+    assert.deepEqual(next.lastReveal,result.reveal);assert.deepEqual(inventory(next),inventory(game));
+  }
+});
+
 test('caught final-card bluff collects entire pile and cannot win', () => {
   const game = createGame('bluff', players, 0);
   game.hands.alice = [card('lie', 'K')];

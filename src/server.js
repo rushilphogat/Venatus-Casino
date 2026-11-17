@@ -7,7 +7,7 @@ import { dirname, resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
-import { createGame, actGame, tickGame, viewGame } from './games.js';
+import { createGame, actGame, tickGame, viewGame, bluffClaimId } from './games.js';
 import {syncPresentation} from './presentation.js';
 import { botAction } from './bots.js';
 import { chooseBotComment } from './table-talk.js';
@@ -507,9 +507,12 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
             if(r.players.find(p=>p.id===user.id)?.left)fail('Your seat is on autopilot',403);
             if (!text(b.actionId, 8, 100)) fail('Action identifier required');
             if ((await get('SELECT action_id FROM actions WHERE room_id=? AND user_id=? AND action_id=?', r.id, user.id, b.actionId))) return safeRoom(r, user);
+            const namedBluffChallenge=r.game==='bluff'&&b.action?.type==='challenge'&&b.action.claimId!==undefined;
+            const challengeForCurrent=namedBluffChallenge&&typeof b.action.claimId==='string'&&r.state?.phase==='challenge'&&b.action.claimId===bluffClaimId(r.state)&&Date.now()<r.state.deadline;
+            if(namedBluffChallenge&&!challengeForCurrent)fail('That claim has already closed. The table has been updated.',409);
             if (r.status !== 'playing') fail('Match is not running');
             const readyForCurrent=b.action?.type==='ready'&&b.action.presentationId&&b.action.presentationId===r.state.presentation?.id;
-            if (b.expectedVersion !== r.version&&!readyForCurrent) fail('The table changed. Refresh and try again.', 409);
+            if (b.expectedVersion !== r.version&&!readyForCurrent&&!challengeForCurrent) fail('The table changed. Refresh and try again.', 409);
             if (!b.action || typeof b.action !== 'object') fail('Action required');
             if (r.game === 'rummy' && ['analyze','declare'].includes(b.action.type)) rate(user.id + ':rummy-analysis', 30, 60000);
             syncPresentationHumans(r);r.lastHumanAt=Date.now();
@@ -657,7 +660,17 @@ export async function createApp({ dbPath = resolve(ROOT, 'data/casino.sqlite'), 
           await finish(r); await save(r); changed = true; continue;
         }
         try{
-          if(r.game==='bluff'&&r.state.phase==='challenge'&&now-(r.savedAt||0)>=botDelay&&r.botChallengeChecked!==r.state.moves){r.botChallengeChecked=r.state.moves;for(const p of r.players.filter(p=>(p.bot||p.left)&&p.id!==r.state.lastPlay.player)){const a=botAction(viewGame(r.state,p.id),Math.random,p.difficulty||'medium');if(a){r.state=actGame(r.state,p.id,a,now);break;}}await finish(r);await save(r);changed=true;continue;}
+          if(r.game==='bluff'&&r.state.phase==='challenge'&&now-(r.savedAt||0)>=botDelay&&r.botChallengeChecked!==r.state.moves){
+            r.botChallengeChecked=r.state.moves;let challenged=false;
+            for(const p of r.players.filter(p=>(p.bot||p.left)&&p.id!==r.state.lastPlay.player)){
+              const a=botAction(viewGame(r.state,p.id),Math.random,p.difficulty||'medium');
+              if(a){r.state=actGame(r.state,p.id,a,now);challenged=true;break;}
+            }
+            if(challenged){await finish(r);await save(r);changed=true;}
+            // Persist the private scheduler marker without invalidating human actions.
+            else await run('UPDATE rooms SET data=? WHERE id=?',JSON.stringify(r),r.id);
+            continue;
+          }
           if(actor&&(actor.bot||actor.left)&&r.state.phase!=='challenge'&&now-(r.botMovedAt||r.savedAt||0)>=botDelay){const a=botAction(viewGame(r.state,actor.id),Math.random,actor.difficulty||'medium');if(a){r.state=actGame(r.state,actor.id,a,now);r.botMovedAt=now;await finish(r);await save(r);changed=true;continue;}}
         }catch{await cancel(r,'system','Automated seat recovery');changed=true;continue;}
       }

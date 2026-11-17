@@ -411,7 +411,7 @@ document.addEventListener('click', async event => {
     else if (action === 'chromatic-action') await submitAction({type:button.dataset.move,target:button.dataset.target,color:document.querySelector('#wild-color')?.value});
     else if(action==='confirm-declaration'){await submitAction({type:'declare',cards:[button.dataset.id]});modal.close();}
     else if (action === 'draw-card') await submitAction({ type: 'draw' });
-    else if (action === 'challenge') await submitAction({ type: 'challenge' });
+    else if (action === 'challenge') await submitAction({ type: 'challenge', claimId:button.dataset.claimId });
     else if (action === 'mute') { audioPrefs.muted = !getMix().muted; setMix({muted:audioPrefs.muted}); localStorage.setItem('venatus-sound', JSON.stringify(audioPrefs)); button.textContent = `Sound ${audioPrefs.muted ? 'off' : 'on'}`; button.setAttribute('aria-label', `${audioPrefs.muted ? 'Unmute' : 'Mute'} sound`); sound(); }
     else if(action==='configure-event') {
       const e=state.admin.events.find(e=>e.id===button.dataset.id);

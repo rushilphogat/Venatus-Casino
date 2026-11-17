@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createChromatic, actChromatic, tickChromatic, viewChromatic } from './chromatic.js';
 import { createOhHell, actOhHell, tickOhHell, viewOhHell } from './ohhell.js';
 import { createRummy, actRummy, tickRummy, viewRummy } from './rummy.js';
@@ -95,10 +95,13 @@ function advanceBluff(game, now) {
   startTurn(game, nextPlayer(game, player), now);
 }
 
+// Old saved claims have no UUID; keep their public identity stable through metadata saves.
+export const bluffClaimId = game => game.lastPlay ? game.lastPlay.id || `legacy:${game.moves}:${game.lastPlay.player}` : null;
+
 function bluffAction(game, userId, action, now) {
   if(game.phase==='reveal'){
     requireCondition(['ready','continue'].includes(action.type),'Review the revealed cards before the next turn');
-    if(readyPresentation(game,userId,now)){game.presentation=null;startTurn(game,game.turn,now);}
+    if(readyPresentation(game,userId,now)){game.presentation=null;game.reveal=null;startTurn(game,game.turn,now);}
     return;
   }
   if (action.type === 'skip' && game.houseRules === 'street') {
@@ -112,6 +115,7 @@ function bluffAction(game, userId, action, now) {
   }
   if (action.type === 'challenge') {
     requireCondition(game.phase === 'challenge' && game.lastPlay, 'There is no declaration to challenge');
+    requireCondition(action.claimId === undefined || action.claimId === bluffClaimId(game), 'That claim has already closed');
     const play = game.lastPlay;
     requireCondition(userId !== play.player, 'You cannot challenge yourself');
     const lied = play.cards.some(card => card.rank !== play.rank);
@@ -137,7 +141,7 @@ function bluffAction(game, userId, action, now) {
   }
   removeCards(game, userId, cards);
   game.pile.push(...cards);
-  game.lastPlay = { player: userId, cards, rank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex] };
+  game.lastPlay = { id:randomUUID(), player: userId, cards, rank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex] };
   game.reveal = null;
   game.phase = 'challenge';
   game.deadline = now + paced(game,CHALLENGE_MS);
@@ -211,7 +215,7 @@ export function tickGame(original, now = Date.now()) {
   if (original.phase === 'finished' || now < original.deadline) return original;
   const game = structuredClone(original);
   if (game.type === 'bluff' && game.phase === 'reveal') {
-    if(presentationComplete(game,now)){game.presentation=null;startTurn(game,game.turn,now);}
+    if(presentationComplete(game,now)){game.presentation=null;game.reveal=null;startTurn(game,game.turn,now);}
     return game;
   } else if (game.type === 'bluff' && game.phase === 'challenge') {
     const player = game.lastPlay.player;
@@ -239,7 +243,7 @@ export function viewGame(game, userId) {
     deadline: game.deadline, message: game.message, moves: game.moves,
     hand: structuredClone(game.hands[userId] ?? []), counts: Object.fromEntries(game.players.map(id => [id, game.hands[id].length])) };
   if (game.type === 'bluff') Object.assign(view, { houseRules:game.houseRules, ranks:[...RANKS], skips:game.skips, requiredRank: game.houseRules === 'street' ? game.declaredRank : RANKS[game.rankIndex], pileCount: game.pile.length,
-    lastPlay: game.lastPlay ? { player: game.lastPlay.player, rank: game.lastPlay.rank, count: game.lastPlay.cards.length } : null,
+    lastPlay: game.lastPlay ? { id:bluffClaimId(game), player: game.lastPlay.player, rank: game.lastPlay.rank, count: game.lastPlay.cards.length } : null,
     reveal: structuredClone(game.reveal),lastReveal:structuredClone(game.lastReveal),recentReveals:structuredClone(game.recentReveals||[]),presentation:presentationView(game),pace:game.pace });
   else Object.assign(view, { topCard: structuredClone(game.discard.at(-1)), activeColor: game.activeColor, direction: game.direction,
     drawCount: game.drawPile.length, discardCount: game.discard.length, colors: [...COLORS] });
