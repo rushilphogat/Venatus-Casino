@@ -47,8 +47,9 @@ export function openCinema(event,options){
   const ready=dialog.querySelector('[data-cinema-ready]'),skip=dialog.querySelector('[data-cinema-skip]'),status=dialog.querySelector('.cinema-time');
   const finish=()=>{if(active!==a)return;for(const t of a.timers)clearTimeout(t);a.timers=[];a.finished=true;dialog.dataset.shot='4';dialog.querySelector('h2').textContent=event.title;skip.hidden=true;a.refresh();};
   a.refresh=()=>{
-    if(active!==a)return;const p=!options.replay&&a.room.status==='playing'?a.room.state?.presentation:null,can=p?.required?.includes(a.room.viewerId);ready.hidden=!!p&&!can;
-    const hasReadied=can&&p.ready?.includes(a.room.viewerId);ready.disabled=!!hasReadied;ready.textContent=hasReadied?'Ready ✓':'Continue';
+    if(active!==a)return;const paused=!options.replay&&a.room.status==='paused',p=!options.replay&&['playing','paused'].includes(a.room.status)?a.room.state?.presentation:null,can=p?.required?.includes(a.room.viewerId);ready.hidden=!!p&&!can;
+    const hasReadied=can&&p.ready?.includes(a.room.viewerId);ready.disabled=paused||!!hasReadied;ready.textContent=paused?'Paused':hasReadied?'Ready ✓':'Continue';
+    if(paused){status.textContent='Table paused';return;}
     const max=Math.max(0,Math.ceil(((p?.maximumUntil||a.expiresAt)-Date.now())/1000));
     if(max===0){closeCinema();return;}
     const votes=p?.required.filter(id=>p.ready.includes(id)).length||0;

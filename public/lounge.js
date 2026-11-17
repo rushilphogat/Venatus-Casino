@@ -4,15 +4,15 @@ import {getMix,setMix,updateScore,playSound} from './audio.js';
 import {commentFor} from './personality.js';
 import {openCinema,syncCinema,cinemaTalk} from './cinema.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let historyViewer=null,replayEntry=null;
+let historyViewer=null,replayEntry=null,chatEpoch=0;
 let options,drawer,resultPanel,chatRoom=null,chatCursor=0,chatLoading=false,chatAgain=false,chatOpen=false,messages=[],muted=new Set(),seen=new Set(),recent=new Map(),replayIndex=0,replayStep=0;
 let settings={scale:'auto',effects:'full',shake:false,cards:1};try{settings={...settings,...JSON.parse(localStorage.getItem('venatus-experience')||'{}')};muted=new Set(JSON.parse(localStorage.getItem('venatus-muted-players')||'[]'));}catch{}
 export function toolbar(){return '<div class="experience-toolbar"><button type="button" data-lounge="chat" aria-label="Open table chat">Chat <span class="chat-unread"></span></button><button type="button" data-lounge="emotes" aria-label="Send a reaction">☺ React</button><button type="button" data-lounge="results">Last result</button><button type="button" data-lounge="settings" aria-label="Display and sound settings">⚙</button><button type="button" data-lounge="fullscreen" aria-label="Toggle fullscreen">⛶</button></div>';}
 export function presentationControls(room,viewer){
   const p=room.state?.presentation;if(!p)return '';
-  const ready=p.ready?.includes(viewer),required=p.required||[],can=required.includes(viewer);
+  const ready=p.ready?.includes(viewer),required=p.required||[],can=required.includes(viewer),paused=room.status==='paused';
   const votes=required.filter(id=>p.ready?.includes(id)).length;
-  return `<div class="moment-result" role="status"><span>${votes} / ${p.majority||Math.floor(required.length/2)+1} votes to continue</span>${can?`<button class="primary" data-lounge="ready" ${ready?'disabled':''}>${ready?'Ready ✓':'Continue'}</button>`:''}<small>Majority advances · ${Math.round((p.maximumUntil-p.startedAt)/1000)}s maximum${p.bots?.length?' · Bots ready':''}</small></div>`;
+  return `<div class="moment-result" role="status"><span>${votes} / ${p.majority||Math.floor(required.length/2)+1} votes to continue</span>${can?`<button class="primary" data-lounge="ready" ${ready||paused?'disabled':''}>${paused?'Paused':ready?'Ready ✓':'Continue'}</button>`:''}<small>Majority advances · ${Math.round((p.maximumUntil-p.startedAt)/1000)}s maximum${p.bots?.length?' · Bots ready':''}</small></div>`;
 }
 function applySettings(){const root=document.documentElement;root.dataset.uiScale=settings.scale;root.dataset.effects=settings.effects;root.style.setProperty('--card-adjust',String(settings.cards));root.dataset.screenShake=String(settings.shake);try{localStorage.setItem('venatus-experience',JSON.stringify(settings));}catch{}}
 function eventFor(room){const g=room?.state;if(!g)return null;const name=id=>room.players.find(p=>p.id===id)?.name||'Player';
@@ -33,7 +33,7 @@ export function syncLounge(previous,room){
   }
   updateScore(room);const event=eventFor(room);
   if(event&&!seen.has(event.id)){seen.add(event.id);if(seen.size>200)seen.delete(seen.values().next().value);const list=recent.get(room.id)||[];if(!list.some(e=>e.id===event.id))list.unshift(event);recent.set(room.id,list.slice(0,20));if(previous?.id===room.id){cinematic(event);}}
-  if(chatRoom!==room?.id){chatRoom=room?.id||null;chatCursor=0;messages=[];if(drawer)renderMessages();}
+  if(chatRoom!==(room?.id||null)){chatRoom=room?.id||null;chatEpoch++;chatCursor=0;messages=[];if(drawer){drawer.querySelector('#chat-form input').value='';renderMessages();}}
   if(room&&(chatOpen||room.botChatSeq!==previous?.botChatSeq))refreshChat();
 }
 function renderMessages(){if(!drawer)return;const list=drawer.querySelector('.chat-messages'),nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<80;
@@ -43,15 +43,15 @@ function renderMessages(){if(!drawer)return;const list=drawer.querySelector('.ch
 }
 export async function refreshChat(){
   const state=options?.getState();if(!state?.user||state.page!=='room'||!state.roomId)return;if(chatLoading){chatAgain=true;return;}
-  const room=state.roomId;chatLoading=true;
-  try{const data=await options.api(`/api/rooms/${encodeURIComponent(room)}/chat`);if(options.getState().roomId!==room)return;
+  const room=state.roomId,viewer=state.user.id,epoch=chatEpoch,current=()=>{const s=options.getState();return s.page==='room'&&s.roomId===room&&s.user?.id===viewer&&chatEpoch===epoch;};chatLoading=true;
+  try{const data=await options.api(`/api/rooms/${encodeURIComponent(room)}/chat`);if(!current())return;
     const fresh=data.messages.filter(m=>m.id>chatCursor);messages=data.messages;chatCursor=data.cursor||0;renderMessages();
     for(const message of fresh.slice(-3))if(!muted.has(message.userId)&&Date.now()-message.at<10000){
       if(message.bot&&!cinemaTalk(message)&&!chatOpen){document.querySelector('.bot-comment-toast')?.remove();const bubble=document.createElement('aside');bubble.className='bot-comment-toast';bubble.setAttribute('role','status');bubble.innerHTML=`${portrait({avatar:message.avatar,name:message.name})}<div><strong>${esc(message.name)} · Bot</strong><p>${esc(message.text)}</p></div><button aria-label="Dismiss comment">×</button>`;bubble.querySelector('button').onclick=()=>bubble.remove();document.body.append(bubble);setTimeout(()=>bubble.remove(),6500);}
       if(message.type==='emote'){const seat=[...document.querySelectorAll('[data-seat],[data-seat-id]')].find(s=>(s.dataset.seat||s.dataset.seatId)===message.userId);if(seat){const bubble=document.createElement('span');bubble.className='seat-emote';bubble.textContent=emotes[message.emote]||'✦';seat.append(bubble);setTimeout(()=>bubble.remove(),3200);}}
     }
     if(!chatOpen&&fresh.length&&fresh.some(m=>m.userId!==state.user.id))document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='•');
-  }catch(error){if(chatOpen)drawer.querySelector('.chat-error').textContent=error.message;}finally{chatLoading=false;if(chatAgain){chatAgain=false;queueMicrotask(refreshChat);}}
+  }catch(error){if(current()&&chatOpen)drawer.querySelector('.chat-error').textContent=error.message;}finally{chatLoading=false;if(chatAgain){chatAgain=false;queueMicrotask(refreshChat);}}
 }
 async function sendMessage(body){const state=options.getState();if(!state.roomId)throw new Error('Join a table to chat.');await options.api(`/api/rooms/${encodeURIComponent(state.roomId)}/chat`,body);await refreshChat();}
 function openChat(){document.querySelector('.bot-comment-toast')?.remove();chatOpen=true;drawer.hidden=false;drawer.querySelector('.chat-error').textContent='';document.querySelectorAll('.chat-unread').forEach(el=>el.textContent='');
@@ -62,7 +62,11 @@ function openChat(){document.querySelector('.bot-comment-toast')?.remove();chatO
   drawer.querySelector('.chat-quips').innerHTML=['Nice hand','Well played','One more?',extra].filter(Boolean).map(text=>`<button type="button" data-quip="${esc(text)}">${esc(text)}</button>`).join('');refreshChat();drawer.querySelector('input').focus();}
 function resultBody(event){const room=event.room,g=room.state,name=id=>esc(room.players.find(p=>p.id===id)?.name||'Player'),card=options.card;
   if(room.game==='poker')return `<div class="replay-board">${g.lastResult.board.map(c=>card(c)).join('')}</div>${Object.entries(g.lastResult.showdown||{}).map(([id,s])=>`<div class="replay-hand"><strong>${name(id)} · ${esc(s.name)}</strong><div>${s.hand.map(c=>card(c)).join('')}</div><p>${esc(s.description||'')}</p>${madeHand(s,g.lastResult.board,card,esc)}</div>`).join('')}<div class="replay-pots">${g.lastResult.pots.map((p,i)=>`<p><strong>${p.uncalled?'Uncalled return':i===0?'Main pot':'Side pot'}</strong> ${p.amount} → ${p.winners.map(name).join(' / ')}</p>`).join('')}</div>`;
-  if(room.game==='bluff'){const v=g.reveal||g.lastReveal;return `<p>${name(v.player)} claimed ${v.count||v.cards.length} × ${esc(v.rank||v.cards[0]?.rank||'cards')}. ${name(v.challenger)} called.</p><div class="replay-board">${v.cards.map(c=>card(c)).join('')}</div><p>${name(v.collector)} collected the pile.</p>`;}
+  if(room.game==='bluff'){
+    const v=g.reveal;
+    if(!v)return `<p>${g.winner?`${name(g.winner)} cleared their hand.`:esc(event.sub)}</p>${g.lastPlay?`<p>The final claim of ${g.lastPlay.count} × ${esc(g.lastPlay.rank)} stood without a challenge.</p>`:''}`;
+    return `<p>${name(v.player)} claimed ${v.count||v.cards.length} × ${esc(v.rank||v.cards[0]?.rank||'cards')}. ${name(v.challenger)} called.</p><div class="replay-board">${v.cards.map(c=>card(c)).join('')}</div><p>${name(v.collector)} collected the pile.</p>`;
+  }
   return `<p>${esc(event.sub)}</p>${g.scores?`<div class="result-scores">${Object.entries(g.scores).map(([id,score])=>`<p>${name(id)} <strong>${score}</strong></p>`).join('')}</div>`:''}`;
 }
 function showResults(index=0){const state=options.getState(),list=recent.get(state.roomId)||[];replayIndex=index;

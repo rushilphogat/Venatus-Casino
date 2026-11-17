@@ -1,4 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
+test('an unchallenged Bluff win reports the final claim, never a previous verdict',()=>{
+ const context=vm.createContext({localStorage:{getItem:()=>null}});
+ const code=readFileSync(new URL('../public/lounge.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace(/export /g,'');
+ vm.runInContext(code+'\noptions={card:c=>c.id};globalThis.resultBody=resultBody;',context);
+ const room={game:'bluff',players:[{id:'a',name:'Alice'}],state:{winner:'a',lastPlay:{player:'a',count:1,rank:'K'}}};
+ for(const prior of [null,{player:'a',collector:'a',cards:[{id:'old-private-evidence'}],rank:'7',count:1,lied:true}]){
+  room.state.lastReveal=prior;const html=context.resultBody({room,sub:'Win'});
+  assert.match(html,/Alice cleared their hand/);assert.match(html,/1 × K stood without a challenge/);assert.doesNotMatch(html,/old-private-evidence|Caught/);
+ }
+});
 test('replay history replaces matching snapshots and does not retain another viewer private cards',()=>{
  const context=vm.createContext({localStorage:{getItem:()=>null},document:{querySelector:()=>null},structuredClone,syncCinema(){},updateScore(){}});
  const code=readFileSync(new URL('../public/lounge.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace(/export /g,'');

@@ -7,6 +7,8 @@ const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),dir=a
 const app=await createApp({dbPath:join(dir,'db.sqlite'),databaseUrl:'',secureCookies:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.goto('http://127.0.0.1:'+app.server.address().port);await page.locator('#auth-form [type=submit]').click();await page.locator('.game-picker').waitFor();
+ // Let the initial WebSocket/lobby refresh finish before injecting standalone evidence fixtures.
+ await page.locator('.connection:not(.disconnected)').waitFor();await page.waitForLoadState('networkidle');
  for(const [i,room] of fixtures.entries()){
   // Use a fresh display deadline; the evidence itself comes from the real engine.
   room.state.presentation.maximumUntil=Date.now()+20000;

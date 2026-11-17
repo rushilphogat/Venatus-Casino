@@ -74,6 +74,7 @@ function footer() {
   return `<footer class="footer"><span>Venatus · Virtual chips</span>${state.user ? `<div class="sound-controls"><button data-action="mute" aria-label="${getMix().muted?'Unmute':'Mute'} sound">Sound ${getMix().muted?'off':'on'}</button><button data-lounge="settings">Display & sound</button></div>` : ''}</footer>`;
 }
 function renderAuth() {
+  syncLounge(state.room,null);
   const mode = state.authMode;
   const guest = mode === 'guest';
   const invite = Boolean(pendingInvite);
@@ -224,7 +225,7 @@ function applyRoom(room) {
   const alreadyRendered=Boolean(document.querySelector('.game-room'));
   const unchanged=previous?.id===room.id && previous.version===room.version;
   state.room=room;state.context=room.context;
-  syncLounge(previous,room);
+  syncLounge(previous,room.status==='canceled'?null:room);
   if(unchanged && alreadyRendered && JSON.stringify(previous.players)===JSON.stringify(room.players))return;
   const scroll=document.querySelector('.hand')?.scrollLeft||0;
   const oldInput=document.querySelector('#bet-amount');
@@ -250,6 +251,7 @@ function applyRoom(room) {
   }
 }
 async function refresh() {
+  if(state.page!=='room')syncLounge(state.room,null);
   if (!state.user || savingAccount) return;
   if (refreshing) { needsRefresh=true; return; }
   refreshing=true;
@@ -287,6 +289,8 @@ function connect() {
   current.addEventListener('error', () => {});
 }
 function updateConnection() { document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('disconnected', !state.connected); el.innerHTML = `<i class="dot"></i>${state.connected ? 'Connected' : 'Reconnecting'}`; }); }
+// Flight coordinates belong to the viewport in which the animation started.
+globalThis.addEventListener?.('resize',()=>document.querySelectorAll('.flying-card,.table-flight').forEach(el=>el.remove()));
 function updateTimer() {
   document.querySelectorAll('[data-deadline]').forEach(el => {
     const secs=Math.max(0,Math.ceil((Number(el.dataset.deadline)-Date.now()-serverClockOffset)/1000));
