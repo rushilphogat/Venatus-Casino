@@ -10,6 +10,9 @@
 .table-chat .chat-quips{max-height:20dvh;overflow:auto;flex-shrink:0}
 .table-chat .chat-quips button{white-space:normal;overflow-wrap:anywhere;max-width:100%}
 :is(.game-room,.social-room,.result-replay) .playing-card{container-type:inline-size;position:relative;overflow:hidden;box-sizing:border-box}
+/* Pile cards share one anchor; the generic card positioning must not put them in flow. */
+.social-room .bluff-stack>.playing-card{position:absolute;top:0;left:calc((100% - var(--card-w))/2)}
+.social-room .bluff-stack>.playing-card.back::before{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:64%;height:76%;box-sizing:border-box;font-size:calc(var(--card-h)*.2)}
 :is(.game-room,.social-room,.result-replay) .playing-card .corner{position:absolute;top:6%;left:8%;width:auto;gap:0;line-height:1;font-size:clamp(11px,23cqw,32px);padding:0}
 :is(.game-room,.social-room,.result-replay) .playing-card .corner.bottom{top:auto;left:auto;right:8%;bottom:6%}
 :is(.game-room,.social-room,.result-replay) .playing-card .corner svg{width:.6em;height:.6em}
