@@ -139,9 +139,13 @@ async function scenario(game) {
       assert.equal(final?.board.length,5,'missing river');
       assert.ok(Object.keys(final.showdown).length>=2,'missing showdown');
       await host.page.locator('.poker-showdown').waitFor();
+      await host.page.locator('[data-highlight-hand]').click();assert.equal(await host.page.locator('.game-poker .hand-highlight').count(),5,'Highlight must contain exactly the current best five');
+      await clickMove(players[1],r,players[1].page.locator('[data-lounge=ready]'));
+      await host.page.waitForFunction(()=>document.querySelector('.moment-result')?.textContent.includes('1 / 2'));
+      assert.equal(await host.page.locator('.game-poker .hand-highlight').count(),5,'Highlight lost during snapshot refresh');
     } else if(game==='rummy'){
       await clickMove(actor,r,actor.page.locator('[data-move=draw][data-source=stock]:enabled').first());
-      let s=(await read(actor,r)).state;assert.equal(s.hand.length,14);
+      let s=(await read(actor,r)).state;assert.equal(s.hand.length,14);assert.ok(s.drawnCardId);await actor.page.locator('.hand-card.just-drawn').waitFor();
       await action(actor.page,'hand-sort').click();
       await select(actor,s.hand[0].id);
       await clickMove(actor,r,move(actor.page,'analyze'));

@@ -50,3 +50,12 @@ test('checking a Rummy grouping does not publish private analysis in the shared 
   assert.deepEqual(viewRummy(checked,'b'),before);
   assert.ok(viewRummy(checked,'a').analysis);
 });
+
+
+test('Rummy drawn-card cue is private, clears stale analysis and resets after discard',()=>{
+ let g=createRummy(['a','b'],0);g.analysis.a={valid:true,penalty:0,groups:[]};
+ g=actRummy(g,'a',{type:'draw',source:'stock'},1);
+ const drawn=g.drawnCardId;assert.ok(drawn);assert.equal(viewRummy(g,'a').drawnCardId,drawn);
+ assert.equal(viewRummy(g,'b').drawnCardId,null);assert.equal(viewRummy(g,'a').analysis,null);
+ g=actRummy(g,'a',{type:'discard',cards:[drawn]},2);assert.equal(viewRummy(g,'a').drawnCardId,null);
+});

@@ -1,6 +1,7 @@
 import {portrait} from './profiles.js';
 import {sceneFor,commentFor} from './personality.js';
 import {scoreMoment} from './audio.js';
+import {madeHand} from './poker-result.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let active=null;
 export function cinemaTalk(message){
@@ -12,6 +13,7 @@ export function closeCinema(){if(!active)return;const a=active;active=null;for(c
 export function syncCinema(room){
   if(!active)return;
   if(room?.id!==active.event.room.id||room.started!==active.event.room.started){closeCinema();return;}
+  if(active.options.replay)return;
   const old=active.event.room.state.presentation,current=room.state?.presentation;
   if(old&&current?.id!==old.id&&room.state?.phase!=='finished'){closeCinema();return;}
   active.room=room;active.refresh();
@@ -22,7 +24,7 @@ function evidence(event,card){
     const r=g.lastResult,winners=new Set(r.pots.filter(p=>!p.uncalled).flatMap(p=>p.winners)),showdown=r.showdown||{};
     const hands=Object.entries(showdown).sort(([a],[b])=>Number(winners.has(b))-Number(winners.has(a))).map(([id,result])=>{
       const p=event.room.players.find(p=>p.id===id),best=new Set(result.cardIds||[]);
-      return `<article class="cinema-hand ${winners.has(id)?'awarded':''}"><header>${portrait(p)}<div><strong>${name(id)}</strong><span>${esc(result.description||result.name)}</span></div>${winners.has(id)?'<b class="award-mark">WIN</b>':''}</header><div class="cinema-hole">${result.hand.map(c=>`<div class="${best.has(c.id)?'best-card':''}">${card(c)}</div>`).join('')}<span class="cinema-hand-type">${esc(result.name)}</span></div></article>`;
+      return `<article class="cinema-hand ${winners.has(id)?'awarded':''}" data-showdown-player="${esc(id)}"><header>${portrait(p)}<div><strong>${name(id)}</strong><span>${esc(result.name)} · ${esc(result.description||'')}</span></div>${winners.has(id)?'<b class="award-mark">WIN</b>':''}</header><div class="cinema-hole" aria-label="Hole cards">${result.hand.map(c=>`<div class="${best.has(c.id)?'best-card':'unused-hole'}">${card(c)}</div>`).join('')}<span class="hole-caption">Hole cards</span></div>${madeHand(result,r.board,card,esc)}<button class="inspect-hand" data-best-board="${esc((result.cardIds||[]).join(','))}" aria-pressed="false">Highlight on board</button></article>`;
     }).join('');
     return `<section class="cinema-board" aria-label="Community cards">${r.board.map((c,i)=>`<div class="reveal-card" style="--i:${i}">${card(c)}<span class="reveal-back">V</span></div>`).join('')}</section>${hands?`<section class="cinema-hands" aria-label="Revealed hands">${hands}</section>`:''}<section class="cinema-awards" aria-label="Pot awards">${r.pots.map((p,i)=>`<div><small>${p.uncalled?'Uncalled return':i===0?'Main pot':`Side pot ${i}`}</small><strong>${p.winners.map(name).join(' / ')}</strong><b>${p.amount.toLocaleString()} <span>chips</span></b></div>`).join('')}</section>`;
   }
@@ -45,7 +47,7 @@ export function openCinema(event,options){
   const ready=dialog.querySelector('[data-cinema-ready]'),skip=dialog.querySelector('[data-cinema-skip]'),status=dialog.querySelector('.cinema-time');
   const finish=()=>{if(active!==a)return;for(const t of a.timers)clearTimeout(t);a.timers=[];a.finished=true;dialog.dataset.shot='4';dialog.querySelector('h2').textContent=event.title;skip.hidden=true;a.refresh();};
   a.refresh=()=>{
-    if(active!==a)return;const p=a.room.status==='playing'?a.room.state?.presentation:null,can=p?.required?.includes(a.room.viewerId);ready.hidden=!!p&&!can;
+    if(active!==a)return;const p=!options.replay&&a.room.status==='playing'?a.room.state?.presentation:null,can=p?.required?.includes(a.room.viewerId);ready.hidden=!!p&&!can;
     const hasReadied=can&&p.ready?.includes(a.room.viewerId);ready.disabled=!!hasReadied;ready.textContent=hasReadied?'Ready ✓':'Continue';
     const max=Math.max(0,Math.ceil(((p?.maximumUntil||a.expiresAt)-Date.now())/1000));
     if(max===0){closeCinema();return;}
@@ -54,7 +56,9 @@ export function openCinema(event,options){
   };
   dialog.querySelector('[data-cinema-close]').onclick=closeCinema;dialog.querySelector('[data-cinema-done]').onclick=closeCinema;
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeCinema();});skip.onclick=()=>{a.stopScore?.();scoreMoment('resolve');finish();};
-  ready.onclick=async()=>{if(a.room.status!=='playing'||!a.room.state.presentation){closeCinema();return;}ready.disabled=true;try{await options.ready(a.room.state.presentation.id);}catch(error){status.textContent=error.message;ready.disabled=false;}};
+  ready.onclick=async()=>{if(options.replay||a.room.status!=='playing'||!a.room.state.presentation){closeCinema();return;}ready.disabled=true;try{await options.ready(a.room.state.presentation.id);}catch(error){status.textContent=error.message;ready.disabled=false;}};
+  const inspect=button=>{const ids=new Set(button.dataset.bestBoard.split(','));dialog.querySelectorAll('[data-best-board]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));dialog.querySelectorAll('.cinema-board .reveal-card').forEach(el=>{const used=ids.has(el.querySelector('[data-card-id]')?.dataset.cardId);el.classList.toggle('board-used',used);el.classList.toggle('board-unused',!used);});let label=dialog.querySelector('.board-owner');if(!label){label=document.createElement('p');label.className='board-owner';label.setAttribute('role','status');dialog.querySelector('.cinema-board').after(label);}const id=button.closest('[data-showdown-player]').dataset.showdownPlayer;label.textContent=`Board highlights: ${event.room.players.find(p=>p.id===id)?.name||'Player'}`;};
+  dialog.querySelectorAll('[data-best-board]').forEach(b=>b.onclick=()=>inspect(b));const first=dialog.querySelector('[data-best-board]');if(first)inspect(first);
   a.stopScore=scoreMoment(event.family,duration);
   if(duration){for(const [fraction,shot,title]of [[.2,'1','Cards revealed'],[.45,'2',event.title],[.7,'3',event.title]])a.timers.push(setTimeout(()=>{if(active===a){dialog.dataset.shot=shot;dialog.querySelector('h2').textContent=title;}},duration*fraction));a.timers.push(setTimeout(finish,duration));}else finish();
   a.clock=setInterval(a.refresh,250);a.refresh();

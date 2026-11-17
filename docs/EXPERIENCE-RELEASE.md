@@ -1,11 +1,11 @@
-# Experience implementation — 16 November 2026
+# Experience implementation — updated 17 November 2026
 
 ## Delivered
 
 - Responsive ink-blue/paper styling and illustrated portrait seats, scalable cards and interface preferences. Replaced the old fixed content/table caps; consolidated legacy CSS into a cascade layer.
 - Buttons with press depth, focus and confirmation feedback; larger sliders with fill and readout; keyboard-capable choice menus; segmented seats/bots/pace; paired number steppers and poker bet presets.
 - Win reveals have a twenty-second maximum; Bluff verdicts and Oh Hell trick/round reveals have a seven-second maximum. Continue is available immediately and a strict majority of seated humans advances play early. Bots are automatically ready but cannot outvote the humans. These caps include animation time and do not change with table pace; old solo manual holds are normalized. Full win animations run five seconds and mid-game animations 2.2 seconds, with sound cues following their beats. Finished-match overlays dismiss within twenty seconds without starting another match.
-- Private poker hand description and best-five highlighting. Durable recent poker/Bluff results and authorized action-by-action poker replay. Each main/side pot is rendered separately, including uncalled returns.
+- Private poker hand description and scoped best-five highlighting that survives refresh. Reveals and replays show each player's exact best five with hole/board sources, kickers and per-player board highlights. Board-only ties are labelled. Durable recent poker/Bluff results and authorized action-by-action replay are isolated from live Continue voting. Each main/side pot is rendered separately, including uncalled returns.
 - Twenty-four preset avatars, stable initial assignment, custom upload/crop and persistent thumbnails; guest identity preserved on account conversion.
 - Table-member chat, quick comments, 12 reactions, local mute, host removal, rate limits and independent chat sequence numbers. Actual bot seats now react automatically to public events, with cooldowns and durable chat records. Replies appear over the table or inside the cinematic, as well as in chat.
 - Fifteen scene motifs with staged card flips, winner focus, separate pot awards, full-screen presentation, skip and reduced-motion support. Result evidence excludes private opponent cards.
@@ -16,7 +16,8 @@
 
 ## Verification
 
-- All 124 regression tests passed, including majority voting, duplicate votes, bot readiness, legacy timing normalization, single-round Chromatic, finished-table filtering and public-event bot comments.
+- All 129 regression tests passed, including exact poker evidence, replay cache isolation, private Rummy draw cues, majority voting, duplicate votes, bot readiness, legacy timing normalization, single-round Chromatic, finished-table filtering and public-event bot comments.
+- The evaluator passed independent category-count verification over all 2,598,960 five-card hands and a separate direct-ranking comparison on 10,000 seeded seven-card hands. See BUG-AUDIT-2026-11-17.md for reproduced issues and fixes.
 - All 44 PostgreSQL-compatible integration checks passed, including additive schema initialization, avatar/chat and bot-comment persistence, permissions and settlement.
 - Browser playthroughs exercised all five games on desktop and phone; separate interaction checks cover keyboard/pointer slider input, synchronized steppers, disabled bot counts, custom avatar upload/reload, chat escaping/removal, preference persistence and reduced motion.
 - Overflow checks at 3840, 3440, 3072, 2560, 1920, 1366, 768, 390 and 360 CSS-pixel widths. CSS viewport simulation is not a measurement of physical monitor DPI or every mobile browser.

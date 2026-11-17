@@ -58,7 +58,7 @@ function card(c, interactive = false, disabled = false) {
   const rank = c.rank || c.value;
   const suit = c.suit || '';
   const red = /^(H|D|hearts?|diamonds?)$/i.test(suit);
-  const selected = state.selected.has(c.id);
+  const selected = interactive && state.selected.has(c.id);
   const color = ({ruby:'red',emerald:'green',sapphire:'blue',gold:'yellow'}[c.color] || (['red','green','blue','yellow','wild'].includes(c.color) ? c.color : 'wild'));
   const label = joker?'Printed joker':colorCard ? `${c.color} ${rank}` : `${rank} of ${suit}`;
   const cls = `playing-card ${colorCard ? `color-${color}` : red ? 'red' : ''} ${selected ? 'selected' : ''}`;

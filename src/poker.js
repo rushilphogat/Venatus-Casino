@@ -22,16 +22,23 @@ export function evaluateHand(cards){
  for(let a=0;a<cards.length-4;a++)for(let b=a+1;b<cards.length-3;b++)for(let c=b+1;c<cards.length-2;c++)for(let d=c+1;d<cards.length-1;d++)for(let e=d+1;e<cards.length;e++){
    const selected=[cards[a],cards[b],cards[c],cards[d],cards[e]],candidate=five(selected);if(!rank||compare(candidate,rank)>0){rank=candidate;best=selected;}
  }
- const name=['High card','One pair','Two pair','Three of a kind','Straight','Flush','Full house','Four of a kind','Straight flush'][rank[0]];
+ const name=rank[0]===8&&rank[1]===14?'Royal flush':['High card','One pair','Two pair','Three of a kind','Straight','Flush','Full house','Four of a kind','Straight flush'][rank[0]];
  const singular=rankName,plural=rankPlural;
  const description=[`${singular(rank[1])} high`,`${plural(rank[1])}, ${singular(rank[2])} kicker`,`${plural(rank[1])} and ${plural(rank[2])}`,`${plural(rank[1])}, ${singular(rank[2])} kicker`,`${singular(rank[1])} high`,`${singular(rank[1])} high`,`${plural(rank[1])} full of ${plural(rank[2])}`,`${plural(rank[1])}, ${singular(rank[2])} kicker`,`${singular(rank[1])} high`][rank[0]];
- return {rank,name,description,cardIds:best.map(c=>c.id)};
+ const value=c=>RANKS.indexOf(c.rank)+2;
+ const count=n=>best.filter(c=>value(c)===n).length;
+ best.sort((a,b)=>{
+   const x=value(a),y=value(b);
+   if([4,8].includes(rank[0]))return (rank[1]===5&&y===14?1:y)-(rank[1]===5&&x===14?1:x);
+   return count(y)-count(x)||y-x||String(a.id||a.suit).localeCompare(String(b.id||b.suit));
+ });
+ return {rank,name,description,cardIds:best.map(c=>c.id),bestFive:structuredClone(best)};
 }
 
 function currentHand(g,id){
  const hand=g.hands[id]||[];
  if(hand.length!==2)return null;
- if(g.board.length>=3){const {name,description,cardIds}=evaluateHand([...hand,...g.board]);return {name,description,cardIds};}
+ if(g.board.length>=3){const {name,description,cardIds,bestFive}=evaluateHand([...g.board,...hand]);return {name,description,cardIds,bestFive};}
  const high=[...hand].sort((a,b)=>RANKS.indexOf(b.rank)-RANKS.indexOf(a.rank))[0].rank;
  const n=RANKS.indexOf(high)+2,label=rankName(n);
  return {name:hand[0].rank===hand[1].rank?`Pocket ${rankPlural(n)}`:`${label[0].toUpperCase()+label.slice(1)} high`,
@@ -62,7 +69,7 @@ function finish(g){
 }
 function showdown(g,now){
  const live=active(g),ranks={};g.showdown={};
- for(const p of live){ranks[p]=live.length===1?[0]:evaluateHand([...g.hands[p],...g.board]).rank;if(live.length>1)g.showdown[p]={hand:structuredClone(g.hands[p]),...evaluateHand([...g.hands[p],...g.board])};}
+ for(const p of live){const evaluated=live.length===1?null:evaluateHand([...g.board,...g.hands[p]]);ranks[p]=evaluated?.rank||[0];if(evaluated)g.showdown[p]={hand:structuredClone(g.hands[p]),...evaluated};}
  const order=[];let p=g.dealer;for(let i=0;i<g.players.length;i++){p=next(g,p);order.push(p);}
  const result=settlePots(g.players,g.contributions,g.folded,ranks,order);for(const p of g.players)g.stacks[p]+=result.payouts[p];
  record(g,'result',{pots:result.pots,showdown:g.showdown});

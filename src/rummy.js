@@ -73,13 +73,13 @@ export function actRummy(original,id,a,now=Date.now()){
     check(g.phase==='draw','Drop before drawing');g.dropped[id]=g.turns[id]?40:20;const active=g.players.filter(p=>!g.dropped[p]);if(active.length===1)finish(g,active[0]);else{g.turn=next(g);g.deadline=now+30000;}return g;
   }
   if(g.phase==='draw'){
-    check(a.type==='draw','Draw a card first');g.drawnCardId=draw(g,id,a.source||'stock').id;g.phase='discard';g.message='Discard one card, or declare with a valid remaining 13-card hand.';
+    check(a.type==='draw','Draw a card first');g.drawnCardId=draw(g,id,a.source||'stock').id;g.analysis[id]=null;g.phase='discard';g.message='Discard one card, or declare with a valid remaining 13-card hand.';
   }else{
     check(['discard','declare'].includes(a.type)&&Array.isArray(a.cards)&&a.cards.length===1,'Select one card to discard');
     const selected=g.hands[id].find(c=>c.id===a.cards[0]);check(selected,'You do not hold that card');
     const hand=g.hands[id].filter(c=>c.id!==selected.id);
     if(a.type==='declare')check(analyzeRummy(hand,g.wildRank).valid,'Invalid declaration: group all 13 cards with two sequences including a pure sequence');
-    g.hands[id]=hand;g.discard.push(selected);g.turns[id]++;g.analysis[id]=null;
+    g.hands[id]=hand;g.discard.push(selected);g.turns[id]++;g.analysis[id]=null;g.drawnCardId=null;
     if(a.type==='declare')finish(g,id);else{g.turn=next(g);g.phase='draw';g.message='Card discarded. Next player draws.';}
   }
   if(g.phase!=='finished')g.deadline=now+30000;g.moves++;return g;
@@ -90,4 +90,5 @@ export function tickRummy(original,now=Date.now()){
   return actRummy({...g,deadline:now+1},g.turn,{type:'discard',cards:[g.drawnCardId||g.hands[g.turn].at(-1).id]},now);
 }
 export function viewRummy(g,id){return {type:g.type,players:[...g.players],turn:g.turn,phase:g.phase,winner:g.winner,deadline:g.deadline,message:g.message,
+  drawnCardId:g.turn===id&&g.phase==='discard'?g.drawnCardId||null:null,
   hand:structuredClone(g.hands[id]||[]),counts:Object.fromEntries(g.players.map(p=>[p,g.hands[p].length])),indicator:{...g.indicator},wildRank:g.wildRank,topCard:structuredClone(g.discard.at(-1)),stockCount:g.stock.length,dropped:{...g.dropped},penalties:g.penalties?{...g.penalties}:null,analysis:structuredClone(g.analysis[id]||null),canTakeDiscard:g.discard.length>0&&!wild(g.discard.at(-1),g.wildRank)};}
